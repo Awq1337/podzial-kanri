@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanri - Inteligentny podział aut + Rozpiska v17.5
 // @namespace    http://tampermonkey.net/
-// @version      17.5
+// @version      17.6
 // @description  Obsługa GR Yaris (10k/20k), Supra (tylko Duże D), elektryki EV 25%, opony [O], pracownicy [PRAC], filtr dostawczych i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
