@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v17.5
+// @name         Kanri - Inteligentny podział aut + Rozpiska v17.6
 // @namespace    http://tampermonkey.net/
-// @version      17.6
-// @description  Obsługa GR Yaris (10k/20k), Supra (tylko Duże D), elektryki EV 25%, opony [O], pracownicy [PRAC], filtr dostawczych i eksport HTML.
+// @version      17.7
+// @description  Tryb Sobota (pełny dzień, auta dostawcze, priorytet dla doradców Professional: Frankiewicz, Sołtysik, Jezierski), GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC], eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -16,6 +16,7 @@
     const API_URL = 'https://kanri.aasys.pl/index.jsf';
     let currentMode = 'podzial'; // 'podzial' lub 'rozpiska'
     let selectedDayOffset = 0;   // 0 = Dzisiaj, 1 = Jutro
+    let isSaturdayMode = false;  // Tryb Sobotni
 
     // Lista doradców osobówek zapisana na twardo
     const PASSENGER_ADVISORS = [
@@ -31,7 +32,19 @@
         "Kornel Sycz",
         "Bartosz Jurusz",
         "Olaf Machander",
-        "Michał Smażewski"
+        "Michał Smażewski",
+        "Przemysław Frankiewicz",
+        "Paweł Sołtysik",
+        "Kuba Jezierski",
+        "Jakub Jezierski"
+    ];
+
+    // Doradcy dedykowani do aut dostawczych w sobotę
+    const PROFESSIONAL_ADVISORS = [
+        "Przemysław Frankiewicz",
+        "Paweł Sołtysik",
+        "Kuba Jezierski",
+        "Jakub Jezierski"
     ];
 
     function getViewState() {
@@ -81,6 +94,10 @@
             }
         }
         return '';
+    }
+
+    function isProfessionalAdvisor(advisorName) {
+        return PROFESSIONAL_ADVISORS.some(pAdv => isAdvisorMatch(pAdv, advisorName));
     }
 
     async function fetchVehiclePlates(advisorsConfig) {
@@ -152,23 +169,21 @@
 
     function categorizeService(serviceText, isKinto = false, isContinuation = false, modelText = '') {
         if (!serviceText && !isKinto) return { category: 'OTHER', tag: 'I', isFleet: false, kmVal: 0, calories: 0, isEmployee: false, isTires: false, isEV: false };
-
+        
         const text = (serviceText || '').toUpperCase();
         const modelUpper = (modelText || '').toUpperCase();
         const isFleet = text.includes('PCC') || isKinto;
 
-        // WYKRYWANIE MODELI SPECJALNYCH: GR YARIS ORAZ SUPRA
         const isGRYaris = /GR\s*YARIS|YARIS\s*GR/.test(modelUpper) || /GR\s*YARIS|YARIS\s*GR/.test(text);
         const isSupra = /SUPRA|GR\s*SUPRA/.test(modelUpper) || /SUPRA|GR\s*SUPRA/.test(text);
 
-        const isEV = /BZ4X|BZ3|BZ3X|BZ3C|C-HR\+|URBAN CRUISER|ELECTRIC|BEV|\bEV\b|ELEKTRYCZ/.test(modelUpper) ||
+        const isEV = /BZ4X|BZ3|BZ3X|BZ3C|C-HR\+|URBAN CRUISER|ELECTRIC|BEV|\bEV\b|ELEKTRYCZ/.test(modelUpper) || 
                      /ELECTRIC|BEV|\bEV\b|ELEKTRYCZN|ELEKTRYK/.test(text);
 
         const evPrefix = isEV ? 'E' : '';
         const fleetPrefix = isFleet ? 'F' : '';
         const combinedPrefix = `${evPrefix}${fleetPrefix}`;
 
-        // ROZPOZNAWANIE AUT PRACOWNICZYCH
         const isEmployee = /PRACOWNIK|PRACOWNICZ|PRACOWNIKOW/.test(text);
         if (isEmployee) {
             let calories = calculateCalories('OTHER', 0, isFleet, isEV);
@@ -180,7 +195,6 @@
             return { category: 'OTHER', tag: 'I', isFleet, kmVal: 0, calories, isEmployee: false, isTires: false, isEV };
         }
 
-        // WYKRYWANIE WYMIANY OPON
         const isTiresService = /WYMIANA\s+OPON|SEZONOWA\s+WYMIANA|WYMIANA\s+KÓŁ|WYMIANA\s+KOL|\bOPON\b|\bOPONY\b|\bKOŁA\b|\bKOLA\b/.test(text);
 
         if (text.includes('WERYFIKACJ')) {
@@ -188,7 +202,6 @@
             return { category: 'WERYFIKACJA', tag: 'W', isFleet, kmVal: 0, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // LOGIKA DLA SUPRY: Wszystkie przeglądy są DUŻE [D]
         if (isSupra) {
             const numMatchSupra = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{2,3})\b/);
             let val = numMatchSupra ? parseInt(numMatchSupra[1], 10) : 30;
@@ -196,7 +209,6 @@
             return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // LOGIKA DLA GR YARIS: Małe co 10k, Duże co 20k
         if (isGRYaris) {
             const numMatchGR = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,3})\b/);
             if (numMatchGR) {
@@ -209,7 +221,6 @@
             }
         }
 
-        // Domyślne interwały dla pozostałych aut
         const oddYearsWordMap = [
             { rx: /PIERWSZYM|JEDNYM\s+ROKU/, val: '1rok', years: 1 },
             { rx: /TRZECIM|TRZECH/, val: '3lata', years: 3 },
@@ -304,6 +315,11 @@
     }
 
     function isEligible(adv, startHour, carCategory, isFleetCar, kmVal) {
+        if (isSaturdayMode) {
+            // W Sobotę rozpisujemy cały grafik
+            return true;
+        }
+
         let timeMatch = false;
         if (adv.shift === 1 && startHour < 13) timeMatch = true;
         if (adv.shift === 2 && startHour >= 9 && startHour < 14) timeMatch = true;
@@ -407,15 +423,16 @@
                     isLexus = /^(RX|NX|ES|IS|UX|LC|GS|LS|LX|GX|RC|CT|SC|HS|RZ|LBX)\d/.test(cleanModel);
                 }
 
+                // W Sobotę NIE odrzucamy aut dostawczych
                 let isCommercialVehicle = /PROACE|DYNA|LITEACE|TOWNEACE|TUNDRA|TACOMA|LAND\s*CRUISER|CRUISER|HILUX|4RUNNER|4-RUNNER/.test(modelText);
-                let isPassengerCar = !isCommercialVehicle || isLexus;
+                let isPassengerCar = isSaturdayMode ? true : (!isCommercialVehicle || isLexus);
 
-                tooltipMap.set(plateStr, {
-                    systemAdvisor, leadAdvisor, finalAdvisor,
-                    category: serviceResult.category, tag: serviceResult.tag,
+                tooltipMap.set(plateStr, { 
+                    systemAdvisor, leadAdvisor, finalAdvisor, 
+                    category: serviceResult.category, tag: serviceResult.tag, 
                     isFleet: serviceResult.isFleet, kmVal: serviceResult.kmVal, calories: serviceResult.calories,
-                    hasReplacementCar, isLexus, isPassengerCar, isContinuation, isEmployee: serviceResult.isEmployee,
-                    isTires: serviceResult.isTires, isEV: serviceResult.isEV
+                    hasReplacementCar, isLexus, isPassengerCar, isContinuation, isEmployee: serviceResult.isEmployee, 
+                    isTires: serviceResult.isTires, isEV: serviceResult.isEV, isCommercialVehicle
                 });
             }
         }
@@ -475,10 +492,10 @@
                     continue;
                 }
 
-                let tData = tooltipData || {
-                    systemAdvisor: '', leadAdvisor: '', finalAdvisor: '',
+                let tData = tooltipData || { 
+                    systemAdvisor: '', leadAdvisor: '', finalAdvisor: '', 
                     category: 'OTHER', tag: 'I', isFleet: false, kmVal: 0, calories: 0,
-                    hasReplacementCar: false, isLexus: false, isPassengerCar: true, isContinuation: false, isEmployee: false, isTires: false, isEV: false
+                    hasReplacementCar: false, isLexus: false, isPassengerCar: true, isContinuation: false, isEmployee: false, isTires: false, isEV: false, isCommercialVehicle: false 
                 };
 
                 if (uniqueCarsMap.has(displayPlate)) {
@@ -501,6 +518,7 @@
                     if (tData.hasReplacementCar) existingCar.hasReplacementCar = true;
                     if (tData.isTires) existingCar.isTires = true;
                     if (tData.isEV) existingCar.isEV = true;
+                    if (tData.isCommercialVehicle) existingCar.isCommercialVehicle = true;
 
                     if (startHour < existingCar.startHour) {
                         existingCar.startHour = startHour;
@@ -526,7 +544,8 @@
                         isContinuation: tData.isContinuation,
                         isEmployee: tData.isEmployee,
                         isTires: tData.isTires,
-                        isEV: tData.isEV
+                        isEV: tData.isEV,
+                        isCommercialVehicle: tData.isCommercialVehicle
                     });
                 }
             }
@@ -547,16 +566,18 @@
             let evHtml = car.isEV ? ' <span style="color:#00b894; font-weight:bold;">⚡ [EV]</span>' : '';
             let calHtml = car.calories > 0 ? ` <span style="color:#7f8c8d; font-size:10px;">(${car.calories}pt)</span>` : '';
             let tiresExtraHtml = (car.isTires && car.tag !== 'O') ? ' <span style="color:#8e44ad; font-weight:bold;">[🛞]</span>' : '';
+            let commHtml = car.isCommercialVehicle ? ' <span style="color:#d35400; font-weight:bold;">[PRO]</span>' : '';
 
-            car.display = `<b>${tagHtml} ${car.plate}</b> (${car.timeStr})${calHtml}${kontHtml}${zastHtml}${lexHtml}${evHtml}${tiresExtraHtml} <span style="color:#7f8c8d; font-size:11px;">[${car.groupName}]</span>`;
+            car.display = `<b>${tagHtml} ${car.plate}</b> (${car.timeStr})${calHtml}${kontHtml}${zastHtml}${lexHtml}${evHtml}${commHtml}${tiresExtraHtml} <span style="color:#7f8c8d; font-size:11px;">[${car.groupName}]</span>`;
 
             let sGroup = shortenGroupName(car.groupName);
             let printKont = car.isContinuation ? ` [K${advInfo}]` : (assignedAdvisorName ? ` ${advInfo}` : '');
             let printZast = car.hasReplacementCar ? ' 🔑' : '';
             let printLex = car.isLexus ? ' <b style="color:#b8860b;">L</b>' : '';
             let printEV = car.isEV ? ' ⚡' : '';
+            let printComm = car.isCommercialVehicle ? ' 🚚' : '';
             let printTires = (car.isTires && car.tag !== 'O') ? ' 🛞' : '';
-            car.rawPrint = `<div class="cell-main">[${car.tag}]${printKont} ${car.plate}</div><div class="cell-sub">${car.timeStr} (${sGroup})${printZast}${printLex}${printEV}${printTires}</div>`;
+            car.rawPrint = `<div class="cell-main">[${car.tag}]${printKont} ${car.plate}</div><div class="cell-sub">${car.timeStr} (${sGroup})${printZast}${printLex}${printEV}${printComm}${printTires}</div>`;
         });
 
         if (currentMode === 'rozpiska') {
@@ -600,8 +621,8 @@
         });
 
         // WYLICZANIE ŚREDNIEGO LIMITU KALORYCZNOŚCI DLA PRYWATNYCH
-        let privateUnassignedCars1 = allCars.filter(c => !c.isHardMatched && !c.isFleet && c.startHour < 13 && (c.category === 'DUZY_PRZEGLAD' || c.category === 'MALY_PRZEGLAD'));
-        let privateUnassignedCars3 = allCars.filter(c => !c.isHardMatched && !c.isFleet && c.startHour >= 13 && (c.category === 'DUZY_PRZEGLAD' || c.category === 'MALY_PRZEGLAD'));
+        let privateUnassignedCars1 = allCars.filter(c => !c.isHardMatched && !c.isFleet && (isSaturdayMode || c.startHour < 13) && (c.category === 'DUZY_PRZEGLAD' || c.category === 'MALY_PRZEGLAD'));
+        let privateUnassignedCars3 = allCars.filter(c => !c.isHardMatched && !c.isFleet && !isSaturdayMode && c.startHour >= 13 && (c.category === 'DUZY_PRZEGLAD' || c.category === 'MALY_PRZEGLAD'));
 
         let totalPrivCal1 = privateUnassignedCars1.reduce((sum, c) => sum + c.calories, 0);
         let totalPrivCal3 = privateUnassignedCars3.reduce((sum, c) => sum + c.calories, 0);
@@ -618,7 +639,7 @@
         targetFleetTypes.forEach(isFleetStage => {
             categories.forEach(cat => {
                 let catCars = allCars.filter(c => c.category === cat && !c.isHardMatched && c.isFleet === isFleetStage);
-
+                
                 catCars.sort((a, b) => b.calories - a.calories);
 
                 let groups = {};
@@ -627,9 +648,17 @@
                     let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal));
                     if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
 
+                    // W SOBOTĘ: Priorytet dla doradców Professional na auta dostawcze
+                    if (isSaturdayMode && car.isCommercialVehicle) {
+                        let proEligible = eligible.filter(adv => isProfessionalAdvisor(adv.name));
+                        if (proEligible.length > 0) {
+                            eligible = proEligible;
+                        }
+                    }
+
                     if (eligible.length === 0) {
                         if (car.isLexus) {
-                            if (car.startHour < 13) {
+                            if (car.startHour < 13 && !isSaturdayMode) {
                                 gra1.push(car);
                             } else {
                                 gra3.push(car);
@@ -687,27 +716,27 @@
                         let chosen = advisors[0];
 
                         if (!car.isFleet && (cat === 'DUZY_PRZEGLAD' || cat === 'MALY_PRZEGLAD')) {
-                            let currentPrivCap = (car.startHour < 13) ? caloriePrivCapShift1 : caloriePrivCapShift3;
+                            let currentPrivCap = (car.startHour < 13 || isSaturdayMode) ? caloriePrivCapShift1 : caloriePrivCapShift3;
                             let chosenPrivCal = getAdvisorPrivateCalories(chosen.name, assignment);
 
                             if (chosenPrivCal + car.calories > currentPrivCap) {
                                 if (car.isLexus) {
                                     let moveableCarIdx = assignment[chosen.name].findIndex(c => !c.isHardMatched && !c.isLexus && (c.category === 'DUZY_PRZEGLAD' || c.category === 'MALY_PRZEGLAD'));
-
+                                    
                                     if (moveableCarIdx !== -1) {
                                         let removedCar = assignment[chosen.name].splice(moveableCarIdx, 1)[0];
                                         chosen.counts[removedCar.category]--;
                                         chosen.counts.total--;
                                         chosen.totalCalories -= removedCar.calories;
 
-                                        if (removedCar.startHour < 13) {
+                                        if (removedCar.startHour < 13 && !isSaturdayMode) {
                                             gra1.push(removedCar);
                                         } else {
                                             gra3.push(removedCar);
                                         }
                                     }
                                 } else {
-                                    if (car.startHour < 13) {
+                                    if (car.startHour < 13 && !isSaturdayMode) {
                                         gra1.push(car);
                                     } else {
                                         gra3.push(car);
@@ -751,7 +780,7 @@
 
         allCars.forEach(car => {
             const cat = scheduleData[car.category] ? car.category : 'OTHER';
-            if (car.startHour < 13) {
+            if (car.startHour < 13 && !isSaturdayMode) {
                 scheduleData[cat].shift1.push(car);
             } else {
                 scheduleData[cat].shift2.push(car);
@@ -759,7 +788,8 @@
         });
 
         let dayText = selectedDayOffset === 0 ? "Dzisiaj" : "Jutro";
-        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie aut na rozpisce (${dayText}): ${allCars.length}</p>`;
+        let satText = isSaturdayMode ? " (TRYB SOBOTNI)" : "";
+        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie aut na rozpisce (${dayText}${satText}): ${allCars.length}</p>`;
 
         for (const key in scheduleData) {
             const cat = scheduleData[key];
@@ -768,18 +798,27 @@
                     ${cat.label} <span style="font-size:11px; color:#7f8c8d; font-weight:normal;">(Razem: ${cat.shift1.length + cat.shift2.length})</span>
                 </div>`;
 
-            html += `<div style="font-weight:bold; font-size:11px; color:#2980b9; margin-top:4px;">Zmiana 1 (6:00 - 13:00) [${cat.shift1.length}]:</div>`;
-            if (cat.shift1.length === 0) {
-                html += `<div style="font-size:11px; color:#95a5a6; font-style:italic;">Brak</div>`;
-            } else {
-                cat.shift1.forEach(c => { html += `<div style="font-size:11px; margin-bottom:2px;">${c.display}</div>`; });
-            }
+            if (!isSaturdayMode) {
+                html += `<div style="font-weight:bold; font-size:11px; color:#2980b9; margin-top:4px;">Zmiana 1 (6:00 - 13:00) [${cat.shift1.length}]:</div>`;
+                if (cat.shift1.length === 0) {
+                    html += `<div style="font-size:11px; color:#95a5a6; font-style:italic;">Brak</div>`;
+                } else {
+                    cat.shift1.forEach(c => { html += `<div style="font-size:11px; margin-bottom:2px;">${c.display}</div>`; });
+                }
 
-            html += `<div style="font-weight:bold; font-size:11px; color:#d35400; margin-top:6px;">Zmiana 2 (13:00 - 21:00) [${cat.shift2.length}]:</div>`;
-            if (cat.shift2.length === 0) {
-                html += `<div style="font-size:11px; color:#95a5a6; font-style:italic;">Brak</div>`;
+                html += `<div style="font-weight:bold; font-size:11px; color:#d35400; margin-top:6px;">Zmiana 2 (13:00 - 21:00) [${cat.shift2.length}]:</div>`;
+                if (cat.shift2.length === 0) {
+                    html += `<div style="font-size:11px; color:#95a5a6; font-style:italic;">Brak</div>`;
+                } else {
+                    cat.shift2.forEach(c => { html += `<div style="font-size:11px; margin-bottom:2px;">${c.display}</div>`; });
+                }
             } else {
-                cat.shift2.forEach(c => { html += `<div style="font-size:11px; margin-bottom:2px;">${c.display}</div>`; });
+                html += `<div style="font-weight:bold; font-size:11px; color:#27ae60; margin-top:4px;">Sobota (Cały dzień) [${cat.shift2.length}]:</div>`;
+                if (cat.shift2.length === 0) {
+                    html += `<div style="font-size:11px; color:#95a5a6; font-style:italic;">Brak</div>`;
+                } else {
+                    cat.shift2.forEach(c => { html += `<div style="font-size:11px; margin-bottom:2px;">${c.display}</div>`; });
+                }
             }
 
             html += `</div>`;
@@ -818,7 +857,7 @@
             .shift-header { background-color: #e9ecef; font-weight: bold; text-align: left; padding: 4px 8px; }
         </style></head><body>`;
 
-        html += `<h2>Rozpiska Aut na Hali - ${today}</h2>`;
+        html += `<h2>Rozpiska Aut na Hali - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
         html += `<table><thead><tr>
             <th>Małe Przeglądy [M]</th>
             <th>Duże Przeglądy [D]</th>
@@ -826,23 +865,33 @@
             <th>Inne [I] / Opony [O]</th>
         </tr></thead><tbody>`;
 
-        html += `<tr><td colspan="4" class="shift-header">ZMIANA 1 (6:00 - 13:00)</td></tr><tr>`;
         const keys = ['MALY_PRZEGLAD', 'DUZY_PRZEGLAD', 'WERYFIKACJA', 'OTHER'];
 
-        keys.forEach(k => {
-            html += `<td>`;
-            scheduleData[k].shift1.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
-            html += `</td>`;
-        });
-        html += `</tr>`;
+        if (!isSaturdayMode) {
+            html += `<tr><td colspan="4" class="shift-header">ZMIANA 1 (6:00 - 13:00)</td></tr><tr>`;
+            keys.forEach(k => {
+                html += `<td>`;
+                scheduleData[k].shift1.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
+                html += `</td>`;
+            });
+            html += `</tr>`;
 
-        html += `<tr><td colspan="4" class="shift-header">ZMIANA 2 (13:00 - 21:00)</td></tr><tr>`;
-        keys.forEach(k => {
-            html += `<td>`;
-            scheduleData[k].shift2.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
-            html += `</td>`;
-        });
-        html += `</tr>`;
+            html += `<tr><td colspan="4" class="shift-header">ZMIANA 2 (13:00 - 21:00)</td></tr><tr>`;
+            keys.forEach(k => {
+                html += `<td>`;
+                scheduleData[k].shift2.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
+                html += `</td>`;
+            });
+            html += `</tr>`;
+        } else {
+            html += `<tr><td colspan="4" class="shift-header">SOBOTA (CAŁY DZIEŃ)</td></tr><tr>`;
+            keys.forEach(k => {
+                html += `<td>`;
+                scheduleData[k].shift2.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
+                html += `</td>`;
+            });
+            html += `</tr>`;
+        }
 
         html += `</tbody></table>`;
         html += `<script>window.onload = function() { window.print(); };</script></body></html>`;
@@ -854,14 +903,16 @@
     function renderAssignmentResults(assignment, unassigned, gra1, gra3, totalCars, advisorsConfig) {
         const resultsDiv = document.getElementById('tm-results');
         let dayText = selectedDayOffset === 0 ? "Dzisiaj" : "Jutro";
-        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie wykrytych aut (${dayText}): ${totalCars}</p>`;
+        let satText = isSaturdayMode ? " (TRYB SOBOTNI)" : "";
+        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie wykrytych aut (${dayText}${satText}): ${totalCars}</p>`;
 
         advisorsConfig.forEach(adv => {
             const cars = assignment[adv.name] || [];
             let fleetTag = adv.isFleetOnly ? ' <span style="color:#27ae60; font-size:10px;">[Flota do 75k]</span>' : '';
+            let proTag = isProfessionalAdvisor(adv.name) ? ' <span style="color:#d35400; font-size:10px;">[PRO]</span>' : '';
             html += `<div style="margin-bottom:12px; background:#f9f9f9; padding:8px; border-radius:4px; border:1px solid #eee;">
                 <div style="font-weight:bold; font-size:13px; border-bottom:1px solid #ddd; padding-bottom:4px; margin-bottom:6px; color:#2c3e50;">
-                    ${adv.name}${fleetTag} <span style="font-size:11px; color:#7f8c8d; font-weight:normal;">(Suma: ${adv.counts.total} aut | W:${adv.counts.WERYFIKACJA} I:${adv.counts.OTHER} | ${adv.totalCalories} pkt)</span>
+                    ${adv.name}${fleetTag}${proTag} <span style="font-size:11px; color:#7f8c8d; font-weight:normal;">(Suma: ${adv.counts.total} aut | W:${adv.counts.WERYFIKACJA} I:${adv.counts.OTHER} | ${adv.totalCalories} pkt)</span>
                 </div>`;
 
             if (cars.length === 0) {
@@ -942,85 +993,121 @@
             .page-break { page-break-before: always; margin-top: 20px; }
         </style></head><body>`;
 
-        html += `<h2>Podział Aut Doradców - ${today}</h2>`;
+        html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
 
-        // --- SEKCJA 1: ZMIANA I (RANO) ---
-        html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
-        if (morningAdvisors.length > 0) {
-            html += `<table><thead><tr>`;
-            morningAdvisors.forEach(adv => {
-                let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-            });
-            html += `</tr></thead><tbody>`;
-
-            let maxMorningRows = 0;
-            morningAdvisors.forEach(adv => {
-                let len = (assignment[adv.name] || []).filter(c => c.startHour < 13).length;
-                if (len > maxMorningRows) maxMorningRows = len;
-            });
-
-            for (let r = 0; r < maxMorningRows; r++) {
-                html += `<tr>`;
+        if (!isSaturdayMode) {
+            // ZMIANA I
+            html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
+            if (morningAdvisors.length > 0) {
+                html += `<table><thead><tr>`;
                 morningAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                    let car = cars[r];
-                    html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
+                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
-                html += `</tr>`;
+                html += `</tr></thead><tbody>`;
+
+                let maxMorningRows = 0;
+                morningAdvisors.forEach(adv => {
+                    let len = (assignment[adv.name] || []).filter(c => c.startHour < 13).length;
+                    if (len > maxMorningRows) maxMorningRows = len;
+                });
+
+                for (let r = 0; r < maxMorningRows; r++) {
+                    html += `<tr>`;
+                    morningAdvisors.forEach(adv => {
+                        let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
+                        let car = cars[r];
+                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    });
+                    html += `</tr>`;
+                }
+                html += `</tbody></table>`;
             }
-            html += `</tbody></table>`;
-        } else {
-            html += `<p style="font-style:italic; font-size:10px; color:#777;">Brak doradców na tej zmianie</p>`;
-        }
 
-        if (gra1.length > 0) {
-            html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                <div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div>
-                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
-            gra1.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
-            html += `</div></div>`;
-        }
+            if (gra1.length > 0) {
+                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
+                    <div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
+                gra1.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
+                html += `</div></div>`;
+            }
 
-        // --- SEKCJA 2: ZMIANA III (POPOŁUDNIE - OSOBNA KARTKA) ---
-        html += `<div class="page-break"></div>`;
-        html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
-        if (afternoonAdvisors.length > 0) {
-            html += `<table><thead><tr>`;
-            afternoonAdvisors.forEach(adv => {
-                let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-            });
-            html += `</tr></thead><tbody>`;
-
-            let maxAfternoonRows = 0;
-            afternoonAdvisors.forEach(adv => {
-                let len = (assignment[adv.name] || []).filter(c => c.startHour >= 13).length;
-                if (len > maxAfternoonRows) maxAfternoonRows = len;
-            });
-
-            for (let r = 0; r < maxAfternoonRows; r++) {
-                html += `<tr>`;
+            // ZMIANA III
+            html += `<div class="page-break"></div>`;
+            html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
+            if (afternoonAdvisors.length > 0) {
+                html += `<table><thead><tr>`;
                 afternoonAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                    let car = cars[r];
-                    html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
+                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
-                html += `</tr>`;
-            }
-            html += `</tbody></table>`;
-        } else {
-            html += `<p style="font-style:italic; font-size:10px; color:#777;">Brak doradców na tej zmianie</p>`;
-        }
+                html += `</tr></thead><tbody>`;
 
-        if (gra3.length > 0) {
-            html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                <div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div>
-                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
-            gra3.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
-            html += `</div></div>`;
+                let maxAfternoonRows = 0;
+                afternoonAdvisors.forEach(adv => {
+                    let len = (assignment[adv.name] || []).filter(c => c.startHour >= 13).length;
+                    if (len > maxAfternoonRows) maxAfternoonRows = len;
+                });
+
+                for (let r = 0; r < maxAfternoonRows; r++) {
+                    html += `<tr>`;
+                    afternoonAdvisors.forEach(adv => {
+                        let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
+                        let car = cars[r];
+                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    });
+                    html += `</tr>`;
+                }
+                html += `</tbody></table>`;
+            }
+
+            if (gra3.length > 0) {
+                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
+                    <div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
+                gra3.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
+                html += `</div></div>`;
+            }
+        } else {
+            // DRUK SOBOTNI (JEDNA ZBIORCZA TABELA)
+            html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
+            if (advisorsConfig.length > 0) {
+                html += `<table><thead><tr>`;
+                advisorsConfig.forEach(adv => {
+                    let cars = assignment[adv.name] || [];
+                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
+                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                });
+                html += `</tr></thead><tbody>`;
+
+                let maxSatRows = 0;
+                advisorsConfig.forEach(adv => {
+                    let len = (assignment[adv.name] || []).length;
+                    if (len > maxSatRows) maxSatRows = len;
+                });
+
+                for (let r = 0; r < maxSatRows; r++) {
+                    html += `<tr>`;
+                    advisorsConfig.forEach(adv => {
+                        let cars = assignment[adv.name] || [];
+                        let car = cars[r];
+                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    });
+                    html += `</tr>`;
+                }
+                html += `</tbody></table>`;
+            }
+
+            if (gra3.length > 0 || gra1.length > 0) {
+                let allGra = [...gra1, ...gra3];
+                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
+                    <div class="gra-header">GRA [${allGra.length} aut]:</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
+                allGra.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
+                html += `</div></div>`;
+            }
         }
 
         html += `<script>window.onload = function() { window.print(); };</script></body></html>`;
@@ -1034,9 +1121,6 @@
         d.setDate(d.getDate() + selectedDayOffset);
         let today = d.toLocaleDateString('pl-PL');
         let filename = `Podzial_Aut_${today.replace(/\./g, '-')}.html`;
-
-        let morningAdvisors = advisorsConfig.filter(a => a.shift === 1 || a.shift === 2 || a.shift === 4);
-        let afternoonAdvisors = advisorsConfig.filter(a => a.shift === 3 || a.shift === 2);
 
         let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Podział Aut - ${today}</title><style>
             body { font-family: Arial, sans-serif; margin: 15px; font-size: 11px; background-color: #f4f6f7; }
@@ -1053,67 +1137,100 @@
             .search-info { background: #e3f2fd; color: #0d47a1; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 15px; font-weight: bold; }
         </style></head><body><div class="container">`;
 
-        html += `<h2>Podział Aut Doradców - ${today}</h2>`;
+        html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
         html += `<div class="search-info">🔍 Naciśnij <u>Ctrl + F</u>, aby wyszukać numer rejestracyjny lub nazwisko!</div>`;
 
-        // ZMIANA 1
-        html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
-        if (morningAdvisors.length > 0) {
-            html += `<table><thead><tr>`;
-            morningAdvisors.forEach(adv => {
-                let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-            });
-            html += `</tr></thead><tbody>`;
+        if (!isSaturdayMode) {
+            let morningAdvisors = advisorsConfig.filter(a => a.shift === 1 || a.shift === 2 || a.shift === 4);
+            let afternoonAdvisors = advisorsConfig.filter(a => a.shift === 3 || a.shift === 2);
 
-            let maxRows = Math.max(...morningAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour < 13).length), 0);
-            for (let r = 0; r < maxRows; r++) {
-                html += `<tr>`;
+            html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
+            if (morningAdvisors.length > 0) {
+                html += `<table><thead><tr>`;
                 morningAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                    let car = cars[r];
-                    html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
+                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
-                html += `</tr>`;
+                html += `</tr></thead><tbody>`;
+
+                let maxRows = Math.max(...morningAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour < 13).length), 0);
+                for (let r = 0; r < maxRows; r++) {
+                    html += `<tr>`;
+                    morningAdvisors.forEach(adv => {
+                        let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
+                        let car = cars[r];
+                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    });
+                    html += `</tr>`;
+                }
+                html += `</tbody></table>`;
             }
-            html += `</tbody></table>`;
-        }
 
-        if (gra1.length > 0) {
-            html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-            gra1.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
-            html += `</div></div>`;
-        }
+            if (gra1.length > 0) {
+                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
+                gra1.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
+                html += `</div></div>`;
+            }
 
-        // ZMIANA 3
-        html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
-        if (afternoonAdvisors.length > 0) {
-            html += `<table><thead><tr>`;
-            afternoonAdvisors.forEach(adv => {
-                let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-            });
-            html += `</tr></thead><tbody>`;
-
-            let maxRows = Math.max(...afternoonAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour >= 13).length), 0);
-            for (let r = 0; r < maxRows; r++) {
-                html += `<tr>`;
+            html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
+            if (afternoonAdvisors.length > 0) {
+                html += `<table><thead><tr>`;
                 afternoonAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                    let car = cars[r];
-                    html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
+                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
-                html += `</tr>`;
-            }
-            html += `</tbody></table>`;
-        }
+                html += `</tr></thead><tbody>`;
 
-        if (gra3.length > 0) {
-            html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-            gra3.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
-            html += `</div></div>`;
+                let maxRows = Math.max(...afternoonAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour >= 13).length), 0);
+                for (let r = 0; r < maxRows; r++) {
+                    html += `<tr>`;
+                    afternoonAdvisors.forEach(adv => {
+                        let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
+                        let car = cars[r];
+                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    });
+                    html += `</tr>`;
+                }
+                html += `</tbody></table>`;
+            }
+
+            if (gra3.length > 0) {
+                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
+                gra3.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
+                html += `</div></div>`;
+            }
+        } else {
+            html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
+            if (advisorsConfig.length > 0) {
+                html += `<table><thead><tr>`;
+                advisorsConfig.forEach(adv => {
+                    let cars = assignment[adv.name] || [];
+                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
+                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                });
+                html += `</tr></thead><tbody>`;
+
+                let maxRows = Math.max(...advisorsConfig.map(adv => (assignment[adv.name] || []).length), 0);
+                for (let r = 0; r < maxRows; r++) {
+                    html += `<tr>`;
+                    advisorsConfig.forEach(adv => {
+                        let cars = assignment[adv.name] || [];
+                        let car = cars[r];
+                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                    });
+                    html += `</tr>`;
+                }
+                html += `</tbody></table>`;
+            }
+
+            if (gra3.length > 0 || gra1.length > 0) {
+                let allGra = [...gra1, ...gra3];
+                html += `<div class="gra-box"><div class="gra-header">GRA [${allGra.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
+                allGra.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
+                html += `</div></div>`;
+            }
         }
 
         html += `</div></body></html>`;
@@ -1179,6 +1296,13 @@
                 </button>
             </div>
 
+            <!-- Globalny Checkbox Soboty -->
+            <div style="margin-bottom:10px; padding:6px; background:#f1c40f; border-radius:4px; text-align:center;">
+                <label style="font-weight:bold; font-size:12px; color:#2c3e50; cursor:pointer; user-select:none;">
+                    <input type="checkbox" id="tm-sat-checkbox"> 🗓️ Tryb Sobotni (Pełny grafik + Dostawczaki)
+                </label>
+            </div>
+
             <!-- Zakładki Trybów -->
             <div style="display:flex; gap:5px; margin-bottom:12px;">
                 <button id="tm-tab-podzial" style="flex:1; padding:6px; background:#cc0000; color:white; border:none; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">
@@ -1213,6 +1337,7 @@
 
         const dayToday = document.getElementById('tm-day-today');
         const dayTomorrow = document.getElementById('tm-day-tomorrow');
+        const satCheckbox = document.getElementById('tm-sat-checkbox');
 
         function addAdvisorRow(defaultName = '', defaultShift = 1, defaultFleet = false) {
             const row = document.createElement('div');
@@ -1244,6 +1369,10 @@
         addAdvisorRow('Norbert L', 2, false);
 
         document.getElementById('tm-add-adv-btn').onclick = () => addAdvisorRow();
+
+        satCheckbox.onchange = () => {
+            isSaturdayMode = satCheckbox.checked;
+        };
 
         dayToday.onclick = () => {
             selectedDayOffset = 0;
