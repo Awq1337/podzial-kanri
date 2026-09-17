@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v17.6
+// @name         Kanri - Inteligentny podział aut + Rozpiska v17.7
 // @namespace    http://tampermonkey.net/
-// @version      17.7
-// @description  Tryb Sobota (pełny dzień, auta dostawcze, priorytet dla doradców Professional: Frankiewicz, Sołtysik, Jezierski), GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC], eksport HTML.
+// @version      17.8
+// @description  Rozwijana lista wyboru doradców w panelu, Tryb Sobota (pełny dzień, auta dostawcze, priorytet Professional), GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -18,33 +18,31 @@
     let selectedDayOffset = 0;   // 0 = Dzisiaj, 1 = Jutro
     let isSaturdayMode = false;  // Tryb Sobotni
 
-    // Lista doradców osobówek zapisana na twardo
+    // Lista doradców do rozwijanej listy w UI oraz dopasowań
     const PASSENGER_ADVISORS = [
         "Mikołaj Falkowski",
         "Paweł Okoński",
+        "Olaf Machander",
         "Paweł Kurowski",
-        "Paweł Kowalczyk",
-        "Michał Gryglicki",
+        "Michał Smażewski",
+        "Rafał Krzyszowski",
         "Norbert Longier",
         "Maksymilian Borecki",
-        "Rafał Krzyszowski",
-        "Jakub Leczycki",
+        "Michał Gryglicki",
         "Kornel Sycz",
         "Bartosz Jurusz",
-        "Olaf Machander",
-        "Michał Smażewski",
+        "Jakub Leczycki",
+        "Paweł Kowalczyk",
         "Przemysław Frankiewicz",
         "Paweł Sołtysik",
-        "Kuba Jezierski",
-        "Jakub Jezierski"
+        "Kuba Jezierski"
     ];
 
     // Doradcy dedykowani do aut dostawczych w sobotę
     const PROFESSIONAL_ADVISORS = [
         "Przemysław Frankiewicz",
         "Paweł Sołtysik",
-        "Kuba Jezierski",
-        "Jakub Jezierski"
+        "Kuba Jezierski"
     ];
 
     function getViewState() {
@@ -316,7 +314,6 @@
 
     function isEligible(adv, startHour, carCategory, isFleetCar, kmVal) {
         if (isSaturdayMode) {
-            // W Sobotę rozpisujemy cały grafik
             return true;
         }
 
@@ -423,7 +420,6 @@
                     isLexus = /^(RX|NX|ES|IS|UX|LC|GS|LS|LX|GX|RC|CT|SC|HS|RZ|LBX)\d/.test(cleanModel);
                 }
 
-                // W Sobotę NIE odrzucamy aut dostawczych
                 let isCommercialVehicle = /PROACE|DYNA|LITEACE|TOWNEACE|TUNDRA|TACOMA|LAND\s*CRUISER|CRUISER|HILUX|4RUNNER|4-RUNNER/.test(modelText);
                 let isPassengerCar = isSaturdayMode ? true : (!isCommercialVehicle || isLexus);
 
@@ -648,7 +644,6 @@
                     let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal));
                     if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
 
-                    // W SOBOTĘ: Priorytet dla doradców Professional na auta dostawcze
                     if (isSaturdayMode && car.isCommercialVehicle) {
                         let proEligible = eligible.filter(adv => isProfessionalAdvisor(adv.name));
                         if (proEligible.length > 0) {
@@ -996,7 +991,6 @@
         html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
 
         if (!isSaturdayMode) {
-            // ZMIANA I
             html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
             if (morningAdvisors.length > 0) {
                 html += `<table><thead><tr>`;
@@ -1033,7 +1027,6 @@
                 html += `</div></div>`;
             }
 
-            // ZMIANA III
             html += `<div class="page-break"></div>`;
             html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
             if (afternoonAdvisors.length > 0) {
@@ -1071,7 +1064,6 @@
                 html += `</div></div>`;
             }
         } else {
-            // DRUK SOBOTNI (JEDNA ZBIORCZA TABELA)
             html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
             if (advisorsConfig.length > 0) {
                 html += `<table><thead><tr>`;
@@ -1347,8 +1339,15 @@
             row.style.marginBottom = '5px';
             row.className = 'tm-adv-row';
 
+            let optionsHtml = PASSENGER_ADVISORS.map(advName => {
+                let selected = isAdvisorMatch(advName, defaultName) ? 'selected' : '';
+                return `<option value="${advName}" ${selected}>${advName}</option>`;
+            }).join('');
+
             row.innerHTML = `
-                <input type="text" class="tm-adv-name" placeholder="np. Mikołaj Falkowski" value="${defaultName}" style="flex: 1; min-width: 0; padding: 5px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;">
+                <select class="tm-adv-name" style="flex: 1; min-width: 0; padding: 5px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;">
+                    ${optionsHtml}
+                </select>
                 <select class="tm-adv-shift" style="width: 100px; padding: 5px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;">
                     <option value="1" ${defaultShift === 1 ? 'selected' : ''}>Zm. 1 (&lt; 13:00)</option>
                     <option value="2" ${defaultShift === 2 ? 'selected' : ''}>Zm. 2 (9-14)</option>
@@ -1366,7 +1365,7 @@
         }
 
         addAdvisorRow('Jakub Leczycki', 1, false);
-        addAdvisorRow('Norbert L', 2, false);
+        addAdvisorRow('Norbert Longier', 2, false);
 
         document.getElementById('tm-add-adv-btn').onclick = () => addAdvisorRow();
 
@@ -1431,7 +1430,7 @@
                 });
 
                 if (advisorsConfig.length === 0) {
-                    alert("Musisz dodać i nazwać przynajmniej jednego doradcę w tym trybie!");
+                    alert("Musisz dodać przynajmniej jednego doradcę w tym trybie!");
                     return;
                 }
             }
