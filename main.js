@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v17.7
+// @name         Kanri - Inteligentny podział aut + Rozpiska 
 // @namespace    http://tampermonkey.net/
-// @version      17.8
-// @description  Rozwijana lista wyboru doradców w panelu, Tryb Sobota (pełny dzień, auta dostawcze, priorytet Professional), GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      17.9
+// @description  Ignorowanie blokad grafiku (BLOKADA), rozwijana lista doradców, Tryb Sobota (dostawczaki + priorytet Professional), GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC], eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -42,7 +42,8 @@
     const PROFESSIONAL_ADVISORS = [
         "Przemysław Frankiewicz",
         "Paweł Sołtysik",
-        "Kuba Jezierski"
+        "Kuba Jezierski",
+        "Jakub Jezierski"
     ];
 
     function getViewState() {
@@ -356,7 +357,7 @@
     }
 
     function processData(xmlData, advisorsConfig) {
-        const plateBlacklist = ['URLOP', 'HALA', 'SERWIS', 'EXPRES', 'SZKOLENIE', 'ZMIANA', 'L4', 'TEST', 'BRAK'];
+        const plateBlacklist = ['URLOP', 'HALA', 'SERWIS', 'EXPRES', 'SZKOLENIE', 'ZMIANA', 'L4', 'TEST', 'BRAK', 'BLOKADA', 'KOCUR'];
         const tooltipMap = new Map();
 
         const ulRegex = /<div[^>]*class="[^"]*ui-tooltip-text[^"]*"[^>]*><ul>([\s\S]*?)<\/ul><\/div>/g;
@@ -440,6 +441,7 @@
             const block = blocks[i];
             if (!block.includes('start: new Date')) continue;
 
+            // Ignoruj bloki nieobecności i wolnego czasu
             if (block.includes('service-schedule-employee-not-available') || block.includes('service-schedule-timeline-event-free')) {
                 continue;
             }
@@ -460,8 +462,11 @@
                 let rawPlate = titleMatch[1].trim();
                 let plate = rawPlate.toUpperCase().replace(/\s+/g, '');
 
+                // Filtrowanie haseł z czarnej listy oraz blokad grafiku
                 let isBlacklisted = plateBlacklist.some(word => plate.includes(word));
-                if (isBlacklisted) continue;
+                if (isBlacklisted || plate.includes('BLOKADA') || plate.includes('EXPRES')) {
+                    continue;
+                }
 
                 let matchedTooltipKey = null;
 
@@ -988,7 +993,7 @@
             .page-break { page-break-before: always; margin-top: 20px; }
         </style></head><body>`;
 
-        html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
+        html += `亮2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
 
         if (!isSaturdayMode) {
             html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
