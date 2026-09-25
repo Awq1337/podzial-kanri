@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v17.9
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.1
 // @namespace    http://tampermonkey.net/
-// @version      18.0
-// @description  Poprawka ścisłego dopasowania nazwisk doradców (eliminacja błędów Paweł Kowalczyk vs Paweł Okoński), Tryb Sobota, GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      18.1
+// @description  Ignorowanie wszystkich blokad działu PROFESSIONAL, podziału zmian i urlopów, rozwijana lista doradców, Tryb Sobota, GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -84,7 +84,6 @@
             return usrWords.every(uw => sysWords.some(sw => sw === uw));
         }
 
-        // Wymagaj dopasowania WSZYSTKICH słów (Imię + Nazwisko)
         return usrWords.every(uw => sysWords.some(sw => sw === uw || sw.startsWith(uw) || uw.startsWith(sw)));
     }
 
@@ -360,7 +359,8 @@
     }
 
     function processData(xmlData, advisorsConfig) {
-        const plateBlacklist = ['URLOP', 'HALA', 'SERWIS', 'EXPRES', 'SZKOLENIE', 'ZMIANA', 'L4', 'TEST', 'BRAK', 'BLOKADA', 'KOCUR'];
+        // ROZSZERZONA CZARNA LISTA O SŁOWO PROFESSIONAL
+        const plateBlacklist = ['URLOP', 'HALA', 'SERWIS', 'EXPRES', 'SZKOLENIE', 'ZMIANA', 'ZMIAN', 'L4', 'TEST', 'BRAK', 'BLOKADA', 'PROFESSIONAL', 'PRZENIESIENIE'];
         const tooltipMap = new Map();
 
         const ulRegex = /<div[^>]*class="[^"]*ui-tooltip-text[^"]*"[^>]*><ul>([\s\S]*?)<\/ul><\/div>/g;
@@ -464,8 +464,9 @@
                 let rawPlate = titleMatch[1].trim();
                 let plate = rawPlate.toUpperCase().replace(/\s+/g, '');
 
+                // FILTROWANIE CZARNEJ LISTY ORAZ DOWOLNYCH WARIANTÓW "PROFESSIONAL"
                 let isBlacklisted = plateBlacklist.some(word => plate.includes(word));
-                if (isBlacklisted || plate.includes('BLOKADA') || plate.includes('EXPRES')) {
+                if (isBlacklisted || plate.includes('BLOKADA') || plate.includes('EXPRES') || plate.includes('ZMIAN') || plate.includes('PROFESSIONAL')) {
                     continue;
                 }
 
