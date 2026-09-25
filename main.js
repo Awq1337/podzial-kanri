@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska 
+// @name         Kanri - Inteligentny podział aut + Rozpiska v17.9
 // @namespace    http://tampermonkey.net/
-// @version      17.9
-// @description  Ignorowanie blokad grafiku (BLOKADA), rozwijana lista doradców, Tryb Sobota (dostawczaki + priorytet Professional), GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC], eksport HTML.
+// @version      18.0
+// @description  Poprawka ścisłego dopasowania nazwisk doradców (eliminacja błędów Paweł Kowalczyk vs Paweł Okoński), Tryb Sobota, GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -42,8 +42,7 @@
     const PROFESSIONAL_ADVISORS = [
         "Przemysław Frankiewicz",
         "Paweł Sołtysik",
-        "Kuba Jezierski",
-        "Jakub Jezierski"
+        "Kuba Jezierski"
     ];
 
     function getViewState() {
@@ -71,6 +70,7 @@
             .replace(/Ń/g, 'N');
     }
 
+    // BEZWZGLĘDNE ŚCISŁE DOPASOWANIE IMIENIA I NAZWISKA
     function isAdvisorMatch(userInput, systemString) {
         if (!systemString || !userInput) return false;
 
@@ -80,9 +80,12 @@
         const sysWords = cleanSys.replace(/[^A-Z]/g, ' ').split(/\s+/).filter(w => w.length > 0);
         const usrWords = cleanUsr.replace(/[^A-Z]/g, ' ').split(/\s+/).filter(w => w.length > 0);
 
-        if (usrWords.length === 0 || sysWords.length === 0) return false;
+        if (usrWords.length < 2 || sysWords.length < 2) {
+            return usrWords.every(uw => sysWords.some(sw => sw === uw));
+        }
 
-        return usrWords.every(uw => sysWords.some(sw => sw.startsWith(uw) || uw.startsWith(sw) || sw === uw));
+        // Wymagaj dopasowania WSZYSTKICH słów (Imię + Nazwisko)
+        return usrWords.every(uw => sysWords.some(sw => sw === uw || sw.startsWith(uw) || uw.startsWith(sw)));
     }
 
     function matchWithPassengerAdvisors(systemString) {
@@ -441,7 +444,6 @@
             const block = blocks[i];
             if (!block.includes('start: new Date')) continue;
 
-            // Ignoruj bloki nieobecności i wolnego czasu
             if (block.includes('service-schedule-employee-not-available') || block.includes('service-schedule-timeline-event-free')) {
                 continue;
             }
@@ -462,7 +464,6 @@
                 let rawPlate = titleMatch[1].trim();
                 let plate = rawPlate.toUpperCase().replace(/\s+/g, '');
 
-                // Filtrowanie haseł z czarnej listy oraz blokad grafiku
                 let isBlacklisted = plateBlacklist.some(word => plate.includes(word));
                 if (isBlacklisted || plate.includes('BLOKADA') || plate.includes('EXPRES')) {
                     continue;
@@ -601,12 +602,15 @@
         let unassigned = [];
         const categories = ['DUZY_PRZEGLAD', 'MALY_PRZEGLAD', 'WERYFIKACJA', 'OTHER'];
 
-        // Przydzielanie sztywne (umówieni doradcy)
+        // Przydzielanie sztywne (umówieni doradcy BEZWZGLĘDNIE do właściwego doradcy)
         allCars.forEach(car => {
-            let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal));
-            if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
+            if (!car.finalAdvisor) {
+                car.isHardMatched = false;
+                return;
+            }
 
-            let matched = eligible.filter(adv => isAdvisorMatch(adv.name, car.finalAdvisor));
+            let matched = advisorsConfig.filter(adv => isAdvisorMatch(adv.name, car.finalAdvisor));
+            if (car.isLexus) matched = matched.filter(adv => canHandleLexus(adv.name));
 
             if (matched.length > 0) {
                 car.isHardMatched = true;
@@ -993,7 +997,7 @@
             .page-break { page-break-before: always; margin-top: 20px; }
         </style></head><body>`;
 
-        html += `亮2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
+        html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
 
         if (!isSaturdayMode) {
             html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
