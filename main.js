@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v18.1
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.2
 // @namespace    http://tampermonkey.net/
-// @version      18.1
-// @description  Ignorowanie wszystkich blokad działu PROFESSIONAL, podziału zmian i urlopów, rozwijana lista doradców, Tryb Sobota, GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      18.2
+// @description  Usuwanie ukośników ucieczki z tablic (np. GM\-035\-NF -> GM-035-NF) dla 100% skuteczności Hard Match, ignorowanie blokad PROFESSIONAL, lista doradców, Tryb Sobota, GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -359,7 +359,6 @@
     }
 
     function processData(xmlData, advisorsConfig) {
-        // ROZSZERZONA CZARNA LISTA O SŁOWO PROFESSIONAL
         const plateBlacklist = ['URLOP', 'HALA', 'SERWIS', 'EXPRES', 'SZKOLENIE', 'ZMIANA', 'ZMIAN', 'L4', 'TEST', 'BRAK', 'BLOKADA', 'PROFESSIONAL', 'PRZENIESIENIE'];
         const tooltipMap = new Map();
 
@@ -461,10 +460,10 @@
 
             const titleMatch = block.match(/title(?:\\x22|")[^\>]*>([^<]+)<\\?\/span>/);
             if (titleMatch) {
-                let rawPlate = titleMatch[1].trim();
+                // BEZWZGLĘDNE CZYSZCZENIE UKOŚNIKÓW UCIECZKI PRIMEFACES (GM\-035\-NF -> GM-035-NF)
+                let rawPlate = titleMatch[1].trim().replace(/\\/g, '');
                 let plate = rawPlate.toUpperCase().replace(/\s+/g, '');
 
-                // FILTROWANIE CZARNEJ LISTY ORAZ DOWOLNYCH WARIANTÓW "PROFESSIONAL"
                 let isBlacklisted = plateBlacklist.some(word => plate.includes(word));
                 if (isBlacklisted || plate.includes('BLOKADA') || plate.includes('EXPRES') || plate.includes('ZMIAN') || plate.includes('PROFESSIONAL')) {
                     continue;
@@ -477,7 +476,7 @@
                 } else {
                     for (let key of tooltipMap.keys()) {
                         let cleanKey = key.replace(/ZGŁ\.\s*|\[|\]/g, '');
-                        if (cleanKey.length > 2 && block.includes(cleanKey)) {
+                        if (cleanKey.length > 2 && plate.includes(cleanKey)) {
                             matchedTooltipKey = key;
                             break;
                         }
