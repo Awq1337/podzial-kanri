@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v18.6
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.7
 // @namespace    http://tampermonkey.net/
-// @version      18.6
-// @description  Naprawa parsowania przebiegów ze spacją w GR Yaris (np. 30 000 km -> M30), pancerne dopasowanie tablic, ignorowanie blokad PROFESSIONAL, Tryb Sobota, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      18.7
+// @description  Poprawka fałszywego wykluczania tablic ze słowem L4 (np. DW2YL47), precyzyjny parser GR Yaris 30kkm, pancerne dopasowanie tablic, Tryb Sobota, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -211,7 +211,7 @@
             return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // PRIORYTET DLA GR YARISA (Pancerne wyłapywanie przebiegów typu "30 000 km", "30000 km", "30k", "OT30")
+        // PRIORYTET DLA GR YARISA (10k/20k)
         if (isGRYaris) {
             let val = 10;
             const numMatchGR = text.match(/(\d{1,3})\s*(?:000|\s*000|K|KKM|KM)/) || text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,3})\b/);
@@ -363,7 +363,6 @@
     }
 
     function processData(xmlData, advisorsConfig) {
-        const plateBlacklist = ['URLOP', 'HALA', 'SERWIS', 'EXPRES', 'SZKOLENIE', 'ZMIANA', 'ZMIAN', 'L4', 'TEST', 'BRAK', 'BLOKADA', 'PROFESSIONAL', 'PRZENIESIENIE'];
         const tooltipMap = new Map();
 
         const ulRegex = /<div[^>]*class="[^"]*ui-tooltip-text[^"]*"[^>]*><ul>([\s\S]*?)<\/ul><\/div>/g;
@@ -467,8 +466,9 @@
                 let rawPlate = titleMatch[1].trim();
                 let plate = rawPlate.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-                let isBlacklisted = plateBlacklist.some(word => plate.includes(word));
-                if (isBlacklisted || plate.includes('BLOKADA') || plate.includes('EXPRES') || plate.includes('ZMIAN') || plate.includes('PROFESSIONAL')) {
+                // BEZPIECZNE SPRAWDZANIE CZARNEJ LISTY (SŁOWA-KLUCZE)
+                let isBlacklisted = /\bURLOP\b|\bHALA\b|\bSERWIS\b|\bEXPRES\b|\bSZKOLENIE\b|\bZMIANA\b|\bZMIAN\b|\bL4\b|\bTEST\b|\bBRAK\b|\bBLOKADA\b|\bPROFESSIONAL\b|\bPRZENIESIENIE\b/.test(plate);
+                if (isBlacklisted) {
                     continue;
                 }
 
@@ -1107,8 +1107,10 @@
 
             if (gra3.length > 0 || gra1.length > 0) {
                 let allGra = [...gra1, ...gra3];
-                html += `<div class="gra-box"><div class="gra-header">GRA [${allGra.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                allGra.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
+                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
+                    <div class="gra-header">GRA [${allGra.length} aut]:</div>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
+                allGra.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
                 html += `</div></div>`;
             }
         }
@@ -1302,7 +1304,7 @@
             <!-- Globalny Checkbox Soboty -->
             <div style="margin-bottom:10px; padding:6px; background:#f1c40f; border-radius:4px; text-align:center;">
                 <label style="font-weight:bold; font-size:12px; color:#2c3e50; cursor:pointer; user-select:none;">
-                    <input type="checkbox" id="tm-sat-checkbox"> 🗓️️ Tryb Sobotni (Pełny grafik + Dostawczaki)
+                    <input type="checkbox" id="tm-sat-checkbox"> 🗓 Tryb Sobotni (Pełny grafik + Dostawczaki)
                 </label>
             </div>
 
