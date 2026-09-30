@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v18.3
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.4
 // @namespace    http://tampermonkey.net/
-// @version      18.3
-// @description  Poprawka wykrywania przeglądów dla GR Yaris (np. 30kkm -> M30), czyszczenie ukośników z tablic, ignorowanie blokad PROFESSIONAL, lista doradców, Tryb Sobota, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      18.4
+// @description  Poprawka fałszywego wykrywania "30 LAT" z "30 000 km" dla GR Yarisa, priorytet reguł GR Yaris/Supra, czyszczenie ukośników z tablic, ignorowanie blokad PROFESSIONAL, Tryb Sobota, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -203,6 +203,7 @@
             return { category: 'WERYFIKACJA', tag: 'W', isFleet, kmVal: 0, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
+        // PRIORYTET DLA SUPRY (Zawsze Duże)
         if (isSupra) {
             const numMatchSupra = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{2,3})\b/);
             let val = numMatchSupra ? parseInt(numMatchSupra[1], 10) : 30;
@@ -210,17 +211,17 @@
             return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // PRECYZYJNA LOGIKA DLA GR YARIS (10k/20k)
+        // PRIORYTET DLA GR YARISA (Co 10k małe, co 20k duże)
         if (isGRYaris) {
-            const numMatchGR = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,3})\b/);
-            if (numMatchGR) {
-                let val = parseInt(numMatchGR[1], 10);
-                let isDuzy = (val % 20 === 0);
-                let cat = isDuzy ? 'DUZY_PRZEGLAD' : 'MALY_PRZEGLAD';
-                let prefix = isDuzy ? 'D' : 'M';
-                let calories = calculateCalories(cat, val, isFleet, isEV);
-                return { category: cat, tag: `${combinedPrefix}${prefix}${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
-            }
+            const numMatchGR = text.match(/(\d{1,3})\s*(?:000|K|KKM|KM)/);
+            let val = numMatchGR ? parseInt(numMatchGR[1], 10) : 10;
+            if (val < 10) val = val * 10; // obsługa zapisu np. "30" z 30 000 km
+            
+            let isDuzy = (val % 20 === 0);
+            let cat = isDuzy ? 'DUZY_PRZEGLAD' : 'MALY_PRZEGLAD';
+            let prefix = isDuzy ? 'D' : 'M';
+            let calories = calculateCalories(cat, val, isFleet, isEV);
+            return { category: cat, tag: `${combinedPrefix}${prefix}${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
         const oddYearsWordMap = [
@@ -260,7 +261,8 @@
             }
         }
 
-        const yearDigitMatch = text.match(/(?:PO|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,2})\s*(?:LAT|LATACH|LATAM|ROKU|L)/);
+        // WYKLUCZENIE DOPASOWANIA LAT GDY ZAPIS TO KM (np. 30 000 km)
+        const yearDigitMatch = text.match(/(?:PO|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,2})\s*(?:LAT|LATACH|LATAM|ROKU|\bL\b)(?!\s*000|\s*KM)/);
         if (yearDigitMatch) {
             const years = parseInt(yearDigitMatch[1], 10);
             if (years > 0 && years <= 35) {
@@ -602,15 +604,18 @@
         let unassigned = [];
         const categories = ['DUZY_PRZEGLAD', 'MALY_PRZEGLAD', 'WERYFIKACJA', 'OTHER'];
 
-        // Przydzielanie sztywne (umówieni doradcy BEZWZGLĘDNIE do właściwego doradcy)
+        // Przydzielanie sztywne (Hard Match wymaga obecności doradcy na zmianie)
         allCars.forEach(car => {
             if (!car.finalAdvisor) {
                 car.isHardMatched = false;
                 return;
             }
 
-            let matched = advisorsConfig.filter(adv => isAdvisorMatch(adv.name, car.finalAdvisor));
-            if (car.isLexus) matched = matched.filter(adv => canHandleLexus(adv.name));
+            // Odrzucamy Hard Match, jeżeli doradca jest nieobecny / na innej zmianie
+            let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal));
+            if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
+
+            let matched = eligible.filter(adv => isAdvisorMatch(adv.name, car.finalAdvisor));
 
             if (matched.length > 0) {
                 car.isHardMatched = true;
