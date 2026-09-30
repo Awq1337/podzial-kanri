@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v18.4
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.5
 // @namespace    http://tampermonkey.net/
-// @version      18.4
-// @description  Poprawka fałszywego wykrywania "30 LAT" z "30 000 km" dla GR Yarisa, priorytet reguł GR Yaris/Supra, czyszczenie ukośników z tablic, ignorowanie blokad PROFESSIONAL, Tryb Sobota, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      18.5
+// @description  Pancerne dopasowanie tablic (usuwanie spacji i znaków specjalnych), obsługa Hard Match bez gubienia aut, GR Yaris/Supra, EV 25%, opony [O], pracownicy [PRAC], Tryb Sobota i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -70,7 +70,7 @@
             .replace(/Ń/g, 'N');
     }
 
-    // BEZWZGLĘDNE ŚCISŁE DOPASOWANIE IMIENIA I NAZWISKA
+    // PANCERNE ŚCISŁE DOPASOWANIE IMIENIA I NAZWISKA
     function isAdvisorMatch(userInput, systemString) {
         if (!systemString || !userInput) return false;
 
@@ -203,7 +203,7 @@
             return { category: 'WERYFIKACJA', tag: 'W', isFleet, kmVal: 0, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // PRIORYTET DLA SUPRY (Zawsze Duże)
+        // PRIORYTET DLA SUPRY
         if (isSupra) {
             const numMatchSupra = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{2,3})\b/);
             let val = numMatchSupra ? parseInt(numMatchSupra[1], 10) : 30;
@@ -211,11 +211,11 @@
             return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // PRIORYTET DLA GR YARISA (Co 10k małe, co 20k duże)
+        // PRIORYTET DLA GR YARISA (10k/20k)
         if (isGRYaris) {
             const numMatchGR = text.match(/(\d{1,3})\s*(?:000|K|KKM|KM)/);
             let val = numMatchGR ? parseInt(numMatchGR[1], 10) : 10;
-            if (val < 10) val = val * 10; // obsługa zapisu np. "30" z 30 000 km
+            if (val < 10) val = val * 10;
             
             let isDuzy = (val % 20 === 0);
             let cat = isDuzy ? 'DUZY_PRZEGLAD' : 'MALY_PRZEGLAD';
@@ -261,7 +261,7 @@
             }
         }
 
-        // WYKLUCZENIE DOPASOWANIA LAT GDY ZAPIS TO KM (np. 30 000 km)
+        // WYKLUCZENIE FAŁSZYWEGO LAT GDY TO KM
         const yearDigitMatch = text.match(/(?:PO|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,2})\s*(?:LAT|LATACH|LATAM|ROKU|\bL\b)(?!\s*000|\s*KM)/);
         if (yearDigitMatch) {
             const years = parseInt(yearDigitMatch[1], 10);
@@ -383,17 +383,18 @@
             let plateStr = '';
 
             if (plateMatch && plateMatch[1].trim().length > 0) {
-                plateStr = plateMatch[1].toUpperCase().replace(/\s/g, '');
+                // Czyścimy wszystko oprócz liter i cyfr (np. DW2YL47)
+                plateStr = plateMatch[1].toUpperCase().replace(/[^A-Z0-9]/g, '');
             } else if (zgloszMatch) {
                 let rawZgl = zgloszMatch[1].trim();
                 let cleanNumMatch = rawZgl.match(/0*(\d+)/);
                 let numOnly = cleanNumMatch ? cleanNumMatch[1] : rawZgl;
-                plateStr = `ZGŁ.${numOnly}`;
+                plateStr = `ZGL${numOnly}`;
             } else if (modelText.length > 0) {
                 let shortModel = modelText.replace(/KOMBI|SEDAN|HATCHBACK|SUV/g, '').replace(/\s+/g, ' ').trim();
-                plateStr = `[${shortModel}]`;
+                plateStr = shortModel.replace(/[^A-Z0-9]/g, '');
             } else if (vinMatch) {
-                plateStr = `[VIN:${vinMatch[1].trim().slice(-6)}]`;
+                plateStr = vinMatch[1].trim().slice(-6).replace(/[^A-Z0-9]/g, '');
             }
 
             if (plateStr) {
@@ -463,8 +464,8 @@
 
             const titleMatch = block.match(/title(?:\\x22|")[^\>]*>([^<]+)<\\?\/span>/);
             if (titleMatch) {
-                let rawPlate = titleMatch[1].trim().replace(/\\/g, '');
-                let plate = rawPlate.toUpperCase().replace(/\s+/g, '');
+                let rawPlate = titleMatch[1].trim();
+                let plate = rawPlate.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
                 let isBlacklisted = plateBlacklist.some(word => plate.includes(word));
                 if (isBlacklisted || plate.includes('BLOKADA') || plate.includes('EXPRES') || plate.includes('ZMIAN') || plate.includes('PROFESSIONAL')) {
@@ -477,8 +478,7 @@
                     matchedTooltipKey = plate;
                 } else {
                     for (let key of tooltipMap.keys()) {
-                        let cleanKey = key.replace(/ZGŁ\.\s*|\[|\]/g, '');
-                        if (cleanKey.length > 2 && plate.includes(cleanKey)) {
+                        if (key.length > 2 && plate.includes(key)) {
                             matchedTooltipKey = key;
                             break;
                         }
@@ -604,14 +604,13 @@
         let unassigned = [];
         const categories = ['DUZY_PRZEGLAD', 'MALY_PRZEGLAD', 'WERYFIKACJA', 'OTHER'];
 
-        // Przydzielanie sztywne (Hard Match wymaga obecności doradcy na zmianie)
+        // Przydzielanie sztywne (tylko wtedy gdy doradca pracuje na danej zmianie)
         allCars.forEach(car => {
             if (!car.finalAdvisor) {
                 car.isHardMatched = false;
                 return;
             }
 
-            // Odrzucamy Hard Match, jeżeli doradca jest nieobecny / na innej zmianie
             let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal));
             if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
 
