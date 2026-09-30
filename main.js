@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v18.2
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.3
 // @namespace    http://tampermonkey.net/
-// @version      18.2
-// @description  Usuwanie ukośników ucieczki z tablic (np. GM\-035\-NF -> GM-035-NF) dla 100% skuteczności Hard Match, ignorowanie blokad PROFESSIONAL, lista doradców, Tryb Sobota, GR Yaris, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      18.3
+// @description  Poprawka wykrywania przeglądów dla GR Yaris (np. 30kkm -> M30), czyszczenie ukośników z tablic, ignorowanie blokad PROFESSIONAL, lista doradców, Tryb Sobota, Supra, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -210,6 +210,7 @@
             return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
+        // PRECYZYJNA LOGIKA DLA GR YARIS (10k/20k)
         if (isGRYaris) {
             const numMatchGR = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,3})\b/);
             if (numMatchGR) {
@@ -460,7 +461,6 @@
 
             const titleMatch = block.match(/title(?:\\x22|")[^\>]*>([^<]+)<\\?\/span>/);
             if (titleMatch) {
-                // BEZWZGLĘDNE CZYSZCZENIE UKOŚNIKÓW UCIECZKI PRIMEFACES (GM\-035\-NF -> GM-035-NF)
                 let rawPlate = titleMatch[1].trim().replace(/\\/g, '');
                 let plate = rawPlate.toUpperCase().replace(/\s+/g, '');
 
@@ -1103,9 +1103,7 @@
 
             if (gra3.length > 0 || gra1.length > 0) {
                 let allGra = [...gra1, ...gra3];
-                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                    <div class="gra-header">GRA [${allGra.length} aut]:</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
+                html += `<div class="gra-box"><div class="gra-header">GRA [${allGra.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
                 allGra.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
                 html += `</div></div>`;
             }
