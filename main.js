@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v18.7
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.8
 // @namespace    http://tampermonkey.net/
-// @version      18.7
-// @description  Poprawka fałszywego wykluczania tablic ze słowem L4 (np. DW2YL47), precyzyjny parser GR Yaris 30kkm, pancerne dopasowanie tablic, Tryb Sobota, EV 25%, opony [O], pracownicy [PRAC] i eksport HTML.
+// @version      18.8
+// @description  Ciasny limit kaloryczności Cap (10% + 10pt), pancerne dopasowanie tablic i filtrowanie L4, obsługa GR Yaris/Supra, EV 25%, opony [O], pracownicy [PRAC], Tryb Sobota i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -629,7 +629,7 @@
             }
         });
 
-        // WYLICZANIE ŚREDNIEGO LIMITU KALORYCZNOŚCI DLA PRYWATNYCH
+        // WYLICZANIE ŚREDNIEGO LIMITU KALORYCZNOŚCI DLA PRYWATNYCH (10% + 10pt)
         let privateUnassignedCars1 = allCars.filter(c => !c.isHardMatched && !c.isFleet && (isSaturdayMode || c.startHour < 13) && (c.category === 'DUZY_PRZEGLAD' || c.category === 'MALY_PRZEGLAD'));
         let privateUnassignedCars3 = allCars.filter(c => !c.isHardMatched && !c.isFleet && !isSaturdayMode && c.startHour >= 13 && (c.category === 'DUZY_PRZEGLAD' || c.category === 'MALY_PRZEGLAD'));
 
@@ -639,8 +639,9 @@
         let advShift1Count = advisorsConfig.filter(a => (a.shift === 1 || a.shift === 2 || a.shift === 4) && !a.isFleetOnly).length || 1;
         let advShift3Count = advisorsConfig.filter(a => (a.shift === 3 || a.shift === 2) && !a.isFleetOnly).length || 1;
 
-        let caloriePrivCapShift1 = Math.round((totalPrivCal1 / advShift1Count) * 1.2) + 15;
-        let caloriePrivCapShift3 = Math.round((totalPrivCal3 / advShift3Count) * 1.2) + 15;
+        // NOWY BARDZIEJ CIASNY KONTROLER CAP: 10% + 10pt
+        let caloriePrivCapShift1 = Math.round((totalPrivCal1 / advShift1Count) * 1.1) + 10;
+        let caloriePrivCapShift3 = Math.round((totalPrivCal3 / advShift3Count) * 1.1) + 10;
 
         // DYNAMICZNE PRZYDZIELANIE: ETAP 1 - PRYWATNE, ETAP 2 - FLOTY
         const targetFleetTypes = [false, true];
