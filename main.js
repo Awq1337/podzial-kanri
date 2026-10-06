@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v19.2
+// @name         Kanri - Inteligentny podział aut + Rozpiska v19.3
 // @namespace    http://tampermonkey.net/
-// @version      19.2
-// @description  Doradca "Opony" przejmuje wymiany kół/opon TYLKO ze stanowisk technicznych "Opony", ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
+// @version      19.3
+// @description  Rozszerzone wyłapywanie BLOKADA/WOLNE zlewających się ze słowami (np. DAREKWOLNEBLOKADA), dedykowany profil "Opony" ze stanowisk Opony, ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -469,8 +469,16 @@
                 let rawPlate = titleMatch[1].trim();
                 let plate = rawPlate.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-                // BEZPIECZNE SPRAWDZANIE CZARNEJ LISTY (SŁOWA-KLUCZE)
-                let isBlacklisted = /\bURLOP\b|\bHALA\b|\bSERWIS\b|\bEXPRES\b|\bSZKOLENIE\b|\bZMIANA\b|\bZMIAN\b|\bL4\b|\bTEST\b|\bBRAK\b|\bBLOKADA\b|\bPROFESSIONAL\b|\bPRZENIESIENIE\b/.test(plate);
+                // BEZPIECZNE SPRAWDZANIE CZARNEJ LISTY DLA SŁÓW SKLEJONYCH (NP. DAREKWOLNEBLOKADA)
+                let isBlacklisted = plate.includes('BLOKADA') || 
+                                    plate.includes('WOLNE') || 
+                                    plate.includes('URLOP') || 
+                                    plate.includes('SZKOLENIE') || 
+                                    plate.includes('PRZENIESIENIE') || 
+                                    plate.includes('EXPRES') || 
+                                    plate.includes('PROFESSIONAL') || 
+                                    /\bHALA\b|\bSERWIS\b|\bZMIANA\b|\bZMIAN\b|\bL4\b|\bTEST\b|\bBRAK\b/.test(plate);
+
                 if (isBlacklisted) {
                     continue;
                 }
@@ -979,7 +987,7 @@
 
         html += `<div style="display:flex; gap:5px; margin-top:10px;">
             <button id="tm-print-btn" style="flex:1; padding: 8px; background: #27ae60; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;">
-                🖨️️ Drukuj Podział
+                🖨️ Drukuj Podział
             </button>
             <button id="tm-download-btn" style="flex:1; padding: 8px; background: #2980b9; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;" title="Zapisuje plik HTML do udostępnienia na dysku sieciowym">
                 💾 Zapisz plik HTML
