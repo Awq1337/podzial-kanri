@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v19.1
+// @name         Kanri - Inteligentny podział aut + Rozpiska v19.2
 // @namespace    http://tampermonkey.net/
-// @version      19.1
-// @description  Poprawka błędu SyntaxError/ReferenceError w wyliczaniu Cap, dedykowany profil "Opony" (tylko czyste wymiany kół/opon), ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
+// @version      19.2
+// @description  Doradca "Opony" przejmuje wymiany kół/opon TYLKO ze stanowisk technicznych "Opony", ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -319,7 +319,7 @@
         return `<span style="color:#95a5a6; font-weight:bold;">[${tag}]</span>`;
     }
 
-    function isEligible(adv, startHour, carCategory, isFleetCar, kmVal, carTag) {
+    function isEligible(adv, startHour, carCategory, isFleetCar, kmVal, carTag, isTiresStand) {
         if (!isSaturdayMode) {
             let timeMatch = false;
             if (adv.shift === 1 && startHour < 13) timeMatch = true;
@@ -330,9 +330,9 @@
             if (!timeMatch) return false;
         }
 
-        // WARUNEK PROFILU OPONY: Przyjmuje TYLKO I WYŁĄCZNIE czystą wymianę opon [O]
+        // WARUNEK PROFILU OPONY: Przyjmuje TYLKO I WYŁĄCZNIE czystą wymianę opon [O] ZE STANOWISKA "OPONY"
         if (adv.isTiresOnly) {
-            return carTag === 'O';
+            return carTag === 'O' && isTiresStand;
         }
 
         if (adv.isFleetOnly) {
@@ -499,6 +499,8 @@
                     continue;
                 }
 
+                let isTiresStand = groupName.includes('OPONY');
+
                 let tData = tooltipData || { 
                     systemAdvisor: '', leadAdvisor: '', finalAdvisor: '', 
                     category: 'OTHER', tag: 'I', isFleet: false, kmVal: 0, calories: 0,
@@ -526,6 +528,7 @@
                     if (tData.isTires) existingCar.isTires = true;
                     if (tData.isEV) existingCar.isEV = true;
                     if (tData.isCommercialVehicle) existingCar.isCommercialVehicle = true;
+                    if (isTiresStand) existingCar.isTiresStand = true;
 
                     if (startHour < existingCar.startHour) {
                         existingCar.startHour = startHour;
@@ -552,7 +555,8 @@
                         isEmployee: tData.isEmployee,
                         isTires: tData.isTires,
                         isEV: tData.isEV,
-                        isCommercialVehicle: tData.isCommercialVehicle
+                        isCommercialVehicle: tData.isCommercialVehicle,
+                        isTiresStand: isTiresStand
                     });
                 }
             }
@@ -614,10 +618,10 @@
                 return;
             }
 
-            let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag));
+            let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag, car.isTiresStand));
             
-            // Profil "Opony" blokuje sztywne dopasowanie do czegokolwiek innego niż czysty tag 'O'
-            eligible = eligible.filter(adv => !adv.isTiresOnly || car.tag === 'O');
+            // Profil "Opony" blokuje sztywne dopasowanie do czegokolwiek innego niż czysty tag 'O' ZE STANOWISKA OPONY
+            eligible = eligible.filter(adv => !adv.isTiresOnly || (car.tag === 'O' && car.isTiresStand));
 
             if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
 
@@ -661,15 +665,18 @@
                 let groups = {};
 
                 catCars.forEach(car => {
-                    let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag));
+                    let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag, car.isTiresStand));
                     if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
 
-                    // Doradcy z zaznaczonym "Opony" mają BEZWZGLĘDNY PRIORYTET do czystych opon [O]
-                    if (car.tag === 'O') {
+                    // Doradcy z zaznaczonym "Opony" mają BEZWZGLĘDNY PRIORYTET TYLKO do czystych opon [O] ZE STANOWISK "OPONY"
+                    if (car.tag === 'O' && car.isTiresStand) {
                         let tiresOnlyEligible = eligible.filter(adv => adv.isTiresOnly);
                         if (tiresOnlyEligible.length > 0) {
                             eligible = tiresOnlyEligible;
                         }
+                    } else {
+                        // Jeśli to nie jest stanowisko "Opony", to wykluczamy doradców z zaznaczonym "Opony"
+                        eligible = eligible.filter(adv => !adv.isTiresOnly);
                     }
 
                     if (isSaturdayMode && car.isCommercialVehicle) {
@@ -932,7 +939,7 @@
         advisorsConfig.forEach(adv => {
             const cars = assignment[adv.name] || [];
             let fleetTag = adv.isFleetOnly ? ' <span style="color:#27ae60; font-size:10px;">[Flota do 75k]</span>' : '';
-            let tiresTag = adv.isTiresOnly ? ' <span style="color:#8e44ad; font-size:10px;">[Tylko Opony]</span>' : '';
+            let tiresTag = adv.isTiresOnly ? ' <span style="color:#8e44ad; font-size:10px;">[Tylko Stanowisko Opony]</span>' : '';
             let proTag = isProfessionalAdvisor(adv.name) ? ' <span style="color:#d35400; font-size:10px;">[PRO]</span>' : '';
             html += `<div style="margin-bottom:12px; background:#f9f9f9; padding:8px; border-radius:4px; border:1px solid #eee;">
                 <div style="font-weight:bold; font-size:13px; border-bottom:1px solid #ddd; padding-bottom:4px; margin-bottom:6px; color:#2c3e50;">
@@ -972,7 +979,7 @@
 
         html += `<div style="display:flex; gap:5px; margin-top:10px;">
             <button id="tm-print-btn" style="flex:1; padding: 8px; background: #27ae60; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;">
-                🖨️ Drukuj Podział
+                🖨️️ Drukuj Podział
             </button>
             <button id="tm-download-btn" style="flex:1; padding: 8px; background: #2980b9; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;" title="Zapisuje plik HTML do udostępnienia na dysku sieciowym">
                 💾 Zapisz plik HTML
@@ -1026,7 +1033,7 @@
                 morningAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
                     html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
@@ -1064,7 +1071,7 @@
                 afternoonAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
                     html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
@@ -1101,7 +1108,7 @@
                 advisorsConfig.forEach(adv => {
                     let cars = assignment[adv.name] || [];
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
                     html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
@@ -1174,7 +1181,7 @@
                 morningAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
                     html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
@@ -1204,7 +1211,7 @@
                 afternoonAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
                     html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
@@ -1234,7 +1241,7 @@
                 advisorsConfig.forEach(adv => {
                     let cars = assignment[adv.name] || [];
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
                     html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
@@ -1392,7 +1399,7 @@
                 <label style="font-size: 9px; display: flex; align-items: center; gap: 1px; cursor: pointer; user-select: none;" title="Uczący się: przyjmuje tylko przeglądy flotowe/KINTO do 75kkm">
                     <input type="checkbox" class="tm-adv-fleet" ${defaultFleet ? 'checked' : ''}> Flota
                 </label>
-                <label style="font-size: 9px; display: flex; align-items: center; gap: 1px; cursor: pointer; user-select: none;" title="Dedykowana obsługa opon: przyjmuje TYLKO czyste wymiany opon/kół [O]">
+                <label style="font-size: 9px; display: flex; align-items: center; gap: 1px; cursor: pointer; user-select: none;" title="Dedykowana obsługa opon: przyjmuje TYLKO czyste wymiany opon/kół [O] ZE STANOWISKA OPONY">
                     <input type="checkbox" class="tm-adv-tires" ${defaultTires ? 'checked' : ''}> Opony
                 </label>
                 <button class="tm-adv-remove" style="background: transparent; color: red; border: none; font-weight: bold; cursor: pointer; padding: 0 2px;">✕</button>
@@ -1441,7 +1448,7 @@
             tabRozpiska.style.background = '#cc0000';
             tabRozpiska.style.color = 'white';
             tabPodzial.style.background = '#e0e0e0';
-            tabPodzial.style.color = '#333';
+            tabRozpiska.style.color = '#333';
             advSection.style.display = 'none';
         };
 
