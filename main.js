@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kanri - Inteligentny podział aut + Rozpiska v18.9
 // @namespace    http://tampermonkey.net/
-// @version      18.9
+// @version      19
 // @description  Dedykowany profil "Opony" (tylko czyste wymiany kół/opon, blokada Hard Match/K), ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
