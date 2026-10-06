@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v19.0
+// @name         Kanri - Inteligentny podział aut + Rozpiska v19.1
 // @namespace    http://tampermonkey.net/
 // @version      19.1
 // @description  Poprawka błędu SyntaxError/ReferenceError w wyliczaniu Cap, dedykowany profil "Opony" (tylko czyste wymiany kół/opon), ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
