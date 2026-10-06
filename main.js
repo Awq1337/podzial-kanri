@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v18.8
+// @name         Kanri - Inteligentny podział aut + Rozpiska v18.9
 // @namespace    http://tampermonkey.net/
-// @version      18.8
-// @description  Ciasny limit kaloryczności Cap (10% + 10pt), pancerne dopasowanie tablic i filtrowanie L4, obsługa GR Yaris/Supra, EV 25%, opony [O], pracownicy [PRAC], Tryb Sobota i eksport HTML.
+// @version      18.9
+// @description  Dedykowany profil "Opony" (tylko czyste wymiany kół/opon, blokada Hard Match/K), ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -112,9 +112,7 @@
 
             if (selectedDayOffset === 1) {
                 const token = getToken();
-                requestBody = `javax.faces.partial.ajax=true&javax.faces.source=serviceWorkSchedule%3AaddDay&aas%3Ac-region=MAIN&javax.faces.partial.execute=serviceWorkSchedule%3AaddDay&javax.faces.partial.render=serviceWorkSchedule&serviceWorkSchedule%3AaddDay=serviceWorkSchedule%3AaddDay&aas%3Ad-region=%40all&token=${token}&validate=true&validateClient=true&javax.faces.ViewState=${currentViewState}`;
-            } else {
-                requestBody = `javax.faces.partial.ajax=true&javax.faces.source=remoteCommands%3Aremote_changeView&aas%3Ac-region=&javax.faces.partial.execute=%40all&remoteCommands%3Aremote_changeView=remoteCommands%3Aremote_changeView&view=carservice%2Fservice-work-schedule&viewIdAndContextDefinition=mBBS129-BbbL&params=&isReload=false&remoteCommands=remoteCommands&remoteCommands%3Atoken=ef2dd0ee97d349b599923979e56c86f8&javax.faces.ViewState=${currentViewState}`;
+                requestBody = `javax.faces.partial.ajax=true&javax.faces.source=serviceWorkSchedule%3AaddDay&aas%3Ac-region=MAIN&javax.faces.partial.execute=serviceWorkSchedule%3AaddDay&javax.faces.partial.render=serviceWorkSchedule&serviceWorkSchedule%3AaddDay=serviceWorkSchedule%3AaddDay&aas%3Ad-region=%40all&token=${token}&validate=true&validateClient=true&javax.faces.ViewState=${currentViewState}`;             } else {                 requestBody = `javax.faces.partial.ajax=true&javax.faces.source=remoteCommands\%3Aremote_changeView&aas\%3Ac-region=&javax.faces.partial.execute=\%40all&remoteCommands\%3Aremote_changeView=remoteCommands\%3Aremote_changeView&view=carservice\%2Fservice-work-schedule&viewIdAndContextDefinition=mBBS129-BbbL&params=&isReload=false&remoteCommands=remoteCommands&remoteCommands\%3Atoken=ef2dd0ee97d349b599923979e56c86f8&javax.faces.ViewState=${currentViewState}`;
             }
 
             const response = await fetch(API_URL, {
@@ -129,101 +127,7 @@
             });
 
             if (!response.ok) {
-                throw new Error(`Błąd HTTP: ${response.status}`);
-            }
-
-            const xmlText = await response.text();
-            processData(xmlText, advisorsConfig);
-
-        } catch (error) {
-            console.error('Błąd podczas zapytania:', error);
-            alert('Wystąpił błąd komunikacji z serwerem. Sprawdź konsolę.');
-        }
-    }
-
-    function calculateCalories(category, kmVal, isFleet, isEV) {
-        let base = 0;
-        if (category === 'DUZY_PRZEGLAD') {
-            if (kmVal === 90 || kmVal === 120 || kmVal === 150 || kmVal === 180) base = 85;
-            else if (kmVal === 60) base = 70;
-            else if (kmVal >= 210) base = 60;
-            else if (kmVal === 30 || kmVal === 20) base = 50;
-            else base = 65;
-        } else if (category === 'MALY_PRZEGLAD') {
-            if (kmVal >= 75) base = 40;
-            else if (kmVal >= 45) base = 30;
-            else base = 20;
-        } else if (category === 'WERYFIKACJA' || category === 'OTHER') {
-            base = 0;
-        }
-
-        if (isEV && base > 0) {
-            base = Math.round(base * 0.25);
-        }
-
-        if (isFleet && base > 0) {
-            base = Math.round(base * 0.25);
-        }
-
-        return base;
-    }
-
-    function categorizeService(serviceText, isKinto = false, isContinuation = false, modelText = '') {
-        if (!serviceText && !isKinto) return { category: 'OTHER', tag: 'I', isFleet: false, kmVal: 0, calories: 0, isEmployee: false, isTires: false, isEV: false };
-        
-        const text = (serviceText || '').toUpperCase();
-        const modelUpper = (modelText || '').toUpperCase();
-        const isFleet = text.includes('PCC') || isKinto;
-
-        const isGRYaris = /GR\s*YARIS|YARIS\s*GR/.test(modelUpper) || /GR\s*YARIS|YARIS\s*GR/.test(text);
-        const isSupra = /SUPRA|GR\s*SUPRA/.test(modelUpper) || /SUPRA|GR\s*SUPRA/.test(text);
-
-        const isEV = /BZ4X|BZ3|BZ3X|BZ3C|C-HR\+|URBAN CRUISER|ELECTRIC|BEV|\bEV\b|ELEKTRYCZ/.test(modelUpper) || 
-                     /ELECTRIC|BEV|\bEV\b|ELEKTRYCZN|ELEKTRYK/.test(text);
-
-        const evPrefix = isEV ? 'E' : '';
-        const fleetPrefix = isFleet ? 'F' : '';
-        const combinedPrefix = `${evPrefix}${fleetPrefix}`;
-
-        const isEmployee = /PRACOWNIK|PRACOWNICZ|PRACOWNIKOW/.test(text);
-        if (isEmployee) {
-            let calories = calculateCalories('OTHER', 0, isFleet, isEV);
-            return { category: 'OTHER', tag: 'PRAC', isFleet, kmVal: 0, calories, isEmployee: true, isTires: false, isEV };
-        }
-
-        if (isContinuation) {
-            let calories = calculateCalories('OTHER', 0, isFleet, isEV);
-            return { category: 'OTHER', tag: 'I', isFleet, kmVal: 0, calories, isEmployee: false, isTires: false, isEV };
-        }
-
-        const isTiresService = /WYMIANA\s+OPON|SEZONOWA\s+WYMIANA|WYMIANA\s+KÓŁ|WYMIANA\s+KOL|\bOPON\b|\bOPONY\b|\bKOŁA\b|\bKOLA\b/.test(text);
-
-        if (text.includes('WERYFIKACJ')) {
-            let calories = calculateCalories('WERYFIKACJA', 0, isFleet, isEV);
-            return { category: 'WERYFIKACJA', tag: 'W', isFleet, kmVal: 0, calories, isEmployee: false, isTires: isTiresService, isEV };
-        }
-
-        // PRIORYTET DLA SUPRY
-        if (isSupra) {
-            const numMatchSupra = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{2,3})\b/);
-            let val = numMatchSupra ? parseInt(numMatchSupra[1], 10) : 30;
-            let calories = calculateCalories('DUZY_PRZEGLAD', val, isFleet, isEV);
-            return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
-        }
-
-        // PRIORYTET DLA GR YARISA (10k/20k)
-        if (isGRYaris) {
-            let val = 10;
-            const numMatchGR = text.match(/(\d{1,3})\s*(?:000|\s*000|K|KKM|KM)/) || text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,3})\b/);
-            if (numMatchGR) {
-                val = parseInt(numMatchGR[1], 10);
-            }
-            
-            let isDuzy = (val % 20 === 0);
-            let cat = isDuzy ? 'DUZY_PRZEGLAD' : 'MALY_PRZEGLAD';
-            let prefix = isDuzy ? 'D' : 'M';
-            let calories = calculateCalories(cat, val, isFleet, isEV);
-            return { category: cat, tag: `${combinedPrefix}${prefix}${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
+                throw new Error(`Błąd HTTP: ${response.status}`);             }              const xmlText = await response.text();             processData(xmlText, advisorsConfig);          } catch (error) {             console.error('Błąd podczas zapytania:', error);             alert('Wystąpił błąd komunikacji z serwerem. Sprawdź konsolę.');         }     }      function calculateCalories(category, kmVal, isFleet, isEV) {         let base = 0;         if (category === 'DUZY_PRZEGLAD') {             if (kmVal === 90 \vert{}\vert{} kmVal === 120 \vert{}\vert{} kmVal === 150 \vert{}\vert{} kmVal === 180) base = 85;             else if (kmVal === 60) base = 70;             else if (kmVal >= 210) base = 60;             else if (kmVal === 30 \vert{}\vert{} kmVal === 20) base = 50;             else base = 65;         } else if (category === 'MALY_PRZEGLAD') {             if (kmVal >= 75) base = 40;             else if (kmVal >= 45) base = 30;             else base = 20;         } else if (category === 'WERYFIKACJA' \vert{}\vert{} category === 'OTHER') {             base = 0;         }          if (isEV && base > 0) {             base = Math.round(base * 0.25);         }          if (isFleet && base > 0) {             base = Math.round(base * 0.25);         }          return base;     }      function categorizeService(serviceText, isKinto = false, isContinuation = false, modelText = '') {         if (!serviceText && !isKinto) return { category: 'OTHER', tag: 'I', isFleet: false, kmVal: 0, calories: 0, isEmployee: false, isTires: false, isEV: false };                  const text = (serviceText \vert{}\vert{} '').toUpperCase();         const modelUpper = (modelText \vert{}\vert{} '').toUpperCase();         const isFleet = text.includes('PCC') \vert{}\vert{} isKinto;          const isGRYaris = /GR\s*YARIS\vert{}YARIS\s*GR/.test(modelUpper) \vert{}\vert{} /GR\s*YARIS\vert{}YARIS\s*GR/.test(text);         const isSupra = /SUPRA\vert{}GR\s*SUPRA/.test(modelUpper) \vert{}\vert{} /SUPRA\vert{}GR\s*SUPRA/.test(text);          const isEV = /BZ4X\vert{}BZ3\vert{}BZ3X\vert{}BZ3C\vert{}C-HR\+\vert{}URBAN CRUISER\vert{}ELECTRIC\vert{}BEV\vert{}\bEV\b\vert{}ELEKTRYCZ/.test(modelUpper) \vert{}\vert{}                       /ELECTRIC\vert{}BEV\vert{}\bEV\b\vert{}ELEKTRYCZN\vert{}ELEKTRYK/.test(text);          const evPrefix = isEV ? 'E' : '';         const fleetPrefix = isFleet ? 'F' : '';         const combinedPrefix = `${evPrefix}${fleetPrefix}`;          const isEmployee = /PRACOWNIK\vert{}PRACOWNICZ\vert{}PRACOWNIKOW/.test(text);         if (isEmployee) {             let calories = calculateCalories('OTHER', 0, isFleet, isEV);             return { category: 'OTHER', tag: 'PRAC', isFleet, kmVal: 0, calories, isEmployee: true, isTires: false, isEV };         }          if (isContinuation) {             let calories = calculateCalories('OTHER', 0, isFleet, isEV);             return { category: 'OTHER', tag: 'I', isFleet, kmVal: 0, calories, isEmployee: false, isTires: false, isEV };         }          const isTiresService = /WYMIANA\s+OPON\vert{}SEZONOWA\s+WYMIANA\vert{}WYMIANA\s+KÓŁ\vert{}WYMIANA\s+KOL\vert{}\bOPON\b\vert{}\bOPONY\b\vert{}\bKOŁA\b\vert{}\bKOLA\b/.test(text);          if (text.includes('WERYFIKACJ')) {             let calories = calculateCalories('WERYFIKACJA', 0, isFleet, isEV);             return { category: 'WERYFIKACJA', tag: 'W', isFleet, kmVal: 0, calories, isEmployee: false, isTires: isTiresService, isEV };         }          // PRIORYTET DLA SUPRY         if (isSupra) {             const numMatchSupra = text.match(/(?:OT\vert{}PRZEGLĄD\vert{}PRZEGLAD\vert{}PRZEGL)[^\d]*(\d{2,3})\b/);             let val = numMatchSupra ? parseInt(numMatchSupra[1], 10) : 30;             let calories = calculateCalories('DUZY_PRZEGLAD', val, isFleet, isEV);             return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };         }          // PRIORYTET DLA GR YARISA (10k/20k)         if (isGRYaris) {             let val = 10;             const numMatchGR = text.match(/(\d{1,3})\s*(?:000\vert{}\s*000\vert{}K\vert{}KKM\vert{}KM)/) \vert{}\vert{} text.match(/(?:OT\vert{}PRZEGLĄD\vert{}PRZEGLAD\vert{}PRZEGL)[^\d]*(\d{1,3})\b/);             if (numMatchGR) {                 val = parseInt(numMatchGR[1], 10);             }                          let isDuzy = (val \% 20 === 0);             let cat = isDuzy ? 'DUZY_PRZEGLAD' : 'MALY_PRZEGLAD';             let prefix = isDuzy ? 'D' : 'M';             let calories = calculateCalories(cat, val, isFleet, isEV);             return { category: cat, tag: `${combinedPrefix}${prefix}${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
         const oddYearsWordMap = [
@@ -284,25 +188,7 @@
                 let cat = isDuzy ? 'DUZY_PRZEGLAD' : 'MALY_PRZEGLAD';
                 let prefix = isDuzy ? 'D' : 'M';
                 let calories = calculateCalories(cat, val, isFleet, isEV);
-                return { category: cat, tag: `${combinedPrefix}${prefix}${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
-            }
-        }
-
-        if (isTiresService) {
-            let calories = calculateCalories('OTHER', 0, isFleet, isEV);
-            return { category: 'OTHER', tag: 'O', isFleet, kmVal: 0, calories, isEmployee: false, isTires: true, isEV };
-        }
-
-        let calories = calculateCalories('OTHER', 0, isFleet, isEV);
-        return { category: 'OTHER', tag: 'I', isFleet, kmVal: 0, calories, isEmployee: false, isTires: false, isEV };
-    }
-
-    function shortenGroupName(groupName) {
-        let name = groupName.toUpperCase().trim();
-        if (name.includes('EXPRES') || name.includes('EXPRESS')) {
-            let numMatch = name.match(/\d+/);
-            let num = numMatch ? numMatch[0] : '';
-            return num ? `${num}-ES` : 'ES';
+                return { category: cat, tag: `${combinedPrefix}${prefix}${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };             }         }          if (isTiresService) {             let calories = calculateCalories('OTHER', 0, isFleet, isEV);             return { category: 'OTHER', tag: 'O', isFleet, kmVal: 0, calories, isEmployee: false, isTires: true, isEV };         }          let calories = calculateCalories('OTHER', 0, isFleet, isEV);         return { category: 'OTHER', tag: 'I', isFleet, kmVal: 0, calories, isEmployee: false, isTires: false, isEV };     }      function shortenGroupName(groupName) {         let name = groupName.toUpperCase().trim();         if (name.includes('EXPRES') \vert{}\vert{} name.includes('EXPRESS')) {             let numMatch = name.match(/\d+/);             let num = numMatch ? numMatch[0] : '';             return num ? `${num}-ES` : 'ES';
         }
         if (name.includes('DIAGNOSTYK')) {
             return 'D';
@@ -319,18 +205,28 @@
         return `<span style="color:#95a5a6; font-weight:bold;">[${tag}]</span>`;
     }
 
-    function isEligible(adv, startHour, carCategory, isFleetCar, kmVal) {
+    function isEligible(adv, startHour, carCategory, isFleetCar, kmVal, carTag) {
         if (isSaturdayMode) {
-            return true;
+            // W trybie sobotnim również uwzględniamy filtry profilowe
+        } else {
+            let timeMatch = false;
+            if (adv.shift === 1 && startHour < 13) timeMatch = true;
+            if (adv.shift === 2 && startHour >= 9 && startHour < 14) timeMatch = true;
+            if (adv.shift === 3 && startHour >= 13 && startHour <= 21) timeMatch = true;
+            if (adv.shift === 4 && startHour >= 7 && startHour <= 15) timeMatch = true;
+
+            if (!timeMatch) return false;
         }
 
-        let timeMatch = false;
-        if (adv.shift === 1 && startHour < 13) timeMatch = true;
-        if (adv.shift === 2 && startHour >= 9 && startHour < 14) timeMatch = true;
-        if (adv.shift === 3 && startHour >= 13 && startHour <= 21) timeMatch = true;
-        if (adv.shift === 4 && startHour >= 7 && startHour <= 15) timeMatch = true;
+        // WARUNEK PROFILU OPONY: Przymuje TYLKO I WYŁĄCZNIE czystą wymianę opon [O]
+        if (adv.isTiresOnly) {
+            return carTag === 'O';
+        }
 
-        if (!timeMatch) return false;
+        // Doradcy z profilem innym niż Opony NIE dostają czystych opon gdy jest doradca Opony
+        if (carTag === 'O') {
+            // Wyjątek przydzielania zostanie obsłużony w pętli przypisywania
+        }
 
         if (adv.isFleetOnly) {
             if (carCategory === 'MALY_PRZEGLAD' || carCategory === 'DUZY_PRZEGLAD') {
@@ -388,180 +284,7 @@
                 let rawZgl = zgloszMatch[1].trim();
                 let cleanNumMatch = rawZgl.match(/0*(\d+)/);
                 let numOnly = cleanNumMatch ? cleanNumMatch[1] : rawZgl;
-                plateStr = `ZGL${numOnly}`;
-            } else if (modelText.length > 0) {
-                let shortModel = modelText.replace(/KOMBI|SEDAN|HATCHBACK|SUV/g, '').replace(/\s+/g, ' ').trim();
-                plateStr = shortModel.replace(/[^A-Z0-9]/g, '');
-            } else if (vinMatch) {
-                plateStr = vinMatch[1].trim().slice(-6).replace(/[^A-Z0-9]/g, '');
-            }
-
-            if (plateStr) {
-                let rawSystemAdv = advMatch ? advMatch[1].replace(/&nbsp;|\xa0/g, ' ').trim() : '';
-                let rawLeadAdv = leadMatch ? leadMatch[1].replace(/&nbsp;|\xa0/g, ' ').trim() : '';
-
-                let systemAdvisor = matchWithPassengerAdvisors(rawSystemAdv);
-                let leadAdvisor = matchWithPassengerAdvisors(rawLeadAdv);
-
-                let isContinuation = false;
-                let finalAdvisor = systemAdvisor;
-
-                if (leadAdvisor !== '') {
-                    finalAdvisor = leadAdvisor;
-                    isContinuation = true;
-                }
-
-                let isKinto = ulContent.toUpperCase().includes('KINTO');
-
-                let serviceText = serviceMatch ? serviceMatch[1].replace(/<[^>]*>?/gm, ' ').trim() : '';
-                let serviceResult = categorizeService(serviceText, isKinto, isContinuation, modelText);
-
-                let hasReplacementCar = /ZASTĘPCZ|ZASTEPCZ|AUTO ZAS|POJAZD ZAS/.test(ulContent.toUpperCase());
-
-                let cleanModel = modelText.replace(/[\s\xa0]+/g, '');
-                let isLexus = false;
-                if (cleanModel.includes('LEXUS')) {
-                    isLexus = true;
-                } else {
-                    isLexus = /^(RX|NX|ES|IS|UX|LC|GS|LS|LX|GX|RC|CT|SC|HS|RZ|LBX)\d/.test(cleanModel);
-                }
-
-                let isCommercialVehicle = /PROACE|DYNA|LITEACE|TOWNEACE|TUNDRA|TACOMA|LAND\s*CRUISER|CRUISER|HILUX|4RUNNER|4-RUNNER/.test(modelText);
-                let isPassengerCar = isSaturdayMode ? true : (!isCommercialVehicle || isLexus);
-
-                tooltipMap.set(plateStr, { 
-                    systemAdvisor, leadAdvisor, finalAdvisor, 
-                    category: serviceResult.category, tag: serviceResult.tag, 
-                    isFleet: serviceResult.isFleet, kmVal: serviceResult.kmVal, calories: serviceResult.calories,
-                    hasReplacementCar, isLexus, isPassengerCar, isContinuation, isEmployee: serviceResult.isEmployee, 
-                    isTires: serviceResult.isTires, isEV: serviceResult.isEV, isCommercialVehicle
-                });
-            }
-        }
-
-        const uniqueCarsMap = new Map();
-        const blocks = xmlData.split('{id: ');
-
-        for (let i = 1; i < blocks.length; i++) {
-            const block = blocks[i];
-            if (!block.includes('start: new Date')) continue;
-
-            if (block.includes('service-schedule-employee-not-available') || block.includes('service-schedule-timeline-event-free')) {
-                continue;
-            }
-
-            const groupMatch = block.match(/group:\s*"([^"]+)"/);
-            if (!groupMatch) continue;
-            const groupName = groupMatch[1].toUpperCase().trim();
-
-            if (groupName.includes('SKP')) continue;
-
-            const startMatch = block.match(/start:\s*new Date\('[^T]+T(\d{2}):(\d{2}):/);
-            if (!startMatch) continue;
-            const startHour = parseInt(startMatch[1], 10);
-            const fullTimeStr = `${startMatch[1]}:${startMatch[2]}`;
-
-            const titleMatch = block.match(/title(?:\\x22|")[^\>]*>([^<]+)<\\?\/span>/);
-            if (titleMatch) {
-                let rawPlate = titleMatch[1].trim();
-                let plate = rawPlate.toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-                // BEZPIECZNE SPRAWDZANIE CZARNEJ LISTY (SŁOWA-KLUCZE)
-                let isBlacklisted = /\bURLOP\b|\bHALA\b|\bSERWIS\b|\bEXPRES\b|\bSZKOLENIE\b|\bZMIANA\b|\bZMIAN\b|\bL4\b|\bTEST\b|\bBRAK\b|\bBLOKADA\b|\bPROFESSIONAL\b|\bPRZENIESIENIE\b/.test(plate);
-                if (isBlacklisted) {
-                    continue;
-                }
-
-                let matchedTooltipKey = null;
-
-                if (tooltipMap.has(plate)) {
-                    matchedTooltipKey = plate;
-                } else {
-                    for (let key of tooltipMap.keys()) {
-                        if (key.length > 2 && plate.includes(key)) {
-                            matchedTooltipKey = key;
-                            break;
-                        }
-                    }
-                }
-
-                if (!matchedTooltipKey && plate.length === 0) {
-                    continue;
-                }
-
-                let tooltipData = matchedTooltipKey ? tooltipMap.get(matchedTooltipKey) : null;
-                let displayPlate = matchedTooltipKey || plate;
-
-                if (tooltipData && !tooltipData.isPassengerCar) {
-                    continue;
-                }
-
-                let tData = tooltipData || { 
-                    systemAdvisor: '', leadAdvisor: '', finalAdvisor: '', 
-                    category: 'OTHER', tag: 'I', isFleet: false, kmVal: 0, calories: 0,
-                    hasReplacementCar: false, isLexus: false, isPassengerCar: true, isContinuation: false, isEmployee: false, isTires: false, isEV: false, isCommercialVehicle: false 
-                };
-
-                if (uniqueCarsMap.has(displayPlate)) {
-                    let existingCar = uniqueCarsMap.get(displayPlate);
-
-                    if (!existingCar.isEmployee && !tData.isEmployee) {
-                        const isNewCarInspection = (tData.category === 'DUZY_PRZEGLAD' || tData.category === 'MALY_PRZEGLAD');
-                        const isExistingCarInspection = (existingCar.category === 'DUZY_PRZEGLAD' || existingCar.category === 'MALY_PRZEGLAD');
-
-                        if (isNewCarInspection && !isExistingCarInspection) {
-                            existingCar.category = tData.category;
-                            existingCar.tag = tData.tag;
-                            existingCar.calories = tData.calories;
-                            existingCar.kmVal = tData.kmVal;
-                        }
-                    }
-
-                    if (tData.isFleet) existingCar.isFleet = true;
-                    if (tData.isLexus) existingCar.isLexus = true;
-                    if (tData.hasReplacementCar) existingCar.hasReplacementCar = true;
-                    if (tData.isTires) existingCar.isTires = true;
-                    if (tData.isEV) existingCar.isEV = true;
-                    if (tData.isCommercialVehicle) existingCar.isCommercialVehicle = true;
-
-                    if (startHour < existingCar.startHour) {
-                        existingCar.startHour = startHour;
-                        existingCar.timeStr = fullTimeStr;
-                        existingCar.groupName = groupName;
-                    }
-                } else {
-                    uniqueCarsMap.set(displayPlate, {
-                        plate: displayPlate,
-                        startHour: startHour,
-                        timeStr: fullTimeStr,
-                        groupName: groupName,
-                        systemAdvisor: tData.systemAdvisor,
-                        leadAdvisor: tData.leadAdvisor,
-                        finalAdvisor: tData.finalAdvisor,
-                        category: tData.category,
-                        tag: tData.tag,
-                        isFleet: tData.isFleet,
-                        kmVal: tData.kmVal,
-                        calories: tData.calories,
-                        hasReplacementCar: tData.hasReplacementCar,
-                        isLexus: tData.isLexus,
-                        isContinuation: tData.isContinuation,
-                        isEmployee: tData.isEmployee,
-                        isTires: tData.isTires,
-                        isEV: tData.isEV,
-                        isCommercialVehicle: tData.isCommercialVehicle
-                    });
-                }
-            }
-        }
-
-        let allCars = Array.from(uniqueCarsMap.values());
-        const sortChronologically = (a, b) => a.timeStr.localeCompare(b.timeStr);
-        allCars.sort(sortChronologically);
-
-        allCars.forEach(car => {
-            let assignedAdvisorName = car.finalAdvisor;
-            let advInfo = assignedAdvisorName ? ` (${assignedAdvisorName})` : '';
+                plateStr = `ZGL${numOnly}`;             } else if (modelText.length > 0) {                 let shortModel = modelText.replace(/KOMBI\vert{}SEDAN\vert{}HATCHBACK\vert{}SUV/g, '').replace(/\s+/g, ' ').trim();                 plateStr = shortModel.replace(/[^A-Z0-9]/g, '');             } else if (vinMatch) {                 plateStr = vinMatch[1].trim().slice(-6).replace(/[^A-Z0-9]/g, '');             }              if (plateStr) {                 let rawSystemAdv = advMatch ? advMatch[1].replace(/&nbsp;\vert{}\xa0/g, ' ').trim() : '';                 let rawLeadAdv = leadMatch ? leadMatch[1].replace(/&nbsp;\vert{}\xa0/g, ' ').trim() : '';                  let systemAdvisor = matchWithPassengerAdvisors(rawSystemAdv);                 let leadAdvisor = matchWithPassengerAdvisors(rawLeadAdv);                  let isContinuation = false;                 let finalAdvisor = systemAdvisor;                  if (leadAdvisor !== '') {                     finalAdvisor = leadAdvisor;                     isContinuation = true;                 }                  let isKinto = ulContent.toUpperCase().includes('KINTO');                  let serviceText = serviceMatch ? serviceMatch[1].replace(/<[^>]*>?/gm, ' ').trim() : '';                 let serviceResult = categorizeService(serviceText, isKinto, isContinuation, modelText);                  let hasReplacementCar = /ZASTĘPCZ\vert{}ZASTEPCZ\vert{}AUTO ZAS\vert{}POJAZD ZAS/.test(ulContent.toUpperCase());                  let cleanModel = modelText.replace(/[\s\xa0]+/g, '');                 let isLexus = false;                 if (cleanModel.includes('LEXUS')) {                     isLexus = true;                 } else {                     isLexus = /^(RX\vert{}NX\vert{}ES\vert{}IS\vert{}UX\vert{}LC\vert{}GS\vert{}LS\vert{}LX\vert{}GX\vert{}RC\vert{}CT\vert{}SC\vert{}HS\vert{}RZ\vert{}LBX)\d/.test(cleanModel);                 }                  let isCommercialVehicle = /PROACE\vert{}DYNA\vert{}LITEACE\vert{}TOWNEACE\vert{}TUNDRA\vert{}TACOMA\vert{}LAND\s*CRUISER\vert{}CRUISER\vert{}HILUX\vert{}4RUNNER\vert{}4-RUNNER/.test(modelText);                 let isPassengerCar = isSaturdayMode ? true : (!isCommercialVehicle \vert{}\vert{} isLexus);                  tooltipMap.set(plateStr, {                      systemAdvisor, leadAdvisor, finalAdvisor,                      category: serviceResult.category, tag: serviceResult.tag,                      isFleet: serviceResult.isFleet, kmVal: serviceResult.kmVal, calories: serviceResult.calories,                     hasReplacementCar, isLexus, isPassengerCar, isContinuation, isEmployee: serviceResult.isEmployee,                      isTires: serviceResult.isTires, isEV: serviceResult.isEV, isCommercialVehicle                 });             }         }          const uniqueCarsMap = new Map();         const blocks = xmlData.split('{id: ');          for (let i = 1; i < blocks.length; i++) {             const block = blocks[i];             if (!block.includes('start: new Date')) continue;              if (block.includes('service-schedule-employee-not-available') \vert{}\vert{} block.includes('service-schedule-timeline-event-free')) {                 continue;             }              const groupMatch = block.match(/group:\s*"([^"]+)"/);             if (!groupMatch) continue;             const groupName = groupMatch[1].toUpperCase().trim();              if (groupName.includes('SKP')) continue;              const startMatch = block.match(/start:\s*new Date\('[^T]+T(\d{2}):(\d{2}):/);             if (!startMatch) continue;             const startHour = parseInt(startMatch[1], 10);             const fullTimeStr = `${startMatch[1]}:${startMatch[2]}`;              const titleMatch = block.match(/title(?:\\x22\vert{}")[^\>]*>([^<]+)<\\?\/span>/);             if (titleMatch) {                 let rawPlate = titleMatch[1].trim();                 let plate = rawPlate.toUpperCase().replace(/[^A-Z0-9]/g, '');                  // BEZPIECZNE SPRAWDZANIE CZARNEJ LISTY (SŁOWA-KLUCZE)                 let isBlacklisted = /\bURLOP\b\vert{}\bHALA\b\vert{}\bSERWIS\b\vert{}\bEXPRES\b\vert{}\bSZKOLENIE\b\vert{}\bZMIANA\b\vert{}\bZMIAN\b\vert{}\bL4\b\vert{}\bTEST\b\vert{}\bBRAK\b\vert{}\bBLOKADA\b\vert{}\bPROFESSIONAL\b\vert{}\bPRZENIESIENIE\b/.test(plate);                 if (isBlacklisted) {                     continue;                 }                  let matchedTooltipKey = null;                  if (tooltipMap.has(plate)) {                     matchedTooltipKey = plate;                 } else {                     for (let key of tooltipMap.keys()) {                         if (key.length > 2 && plate.includes(key)) {                             matchedTooltipKey = key;                             break;                         }                     }                 }                  if (!matchedTooltipKey && plate.length === 0) {                     continue;                 }                  let tooltipData = matchedTooltipKey ? tooltipMap.get(matchedTooltipKey) : null;                 let displayPlate = matchedTooltipKey \vert{}\vert{} plate;                  if (tooltipData && !tooltipData.isPassengerCar) {                     continue;                 }                  let tData = tooltipData \vert{}\vert{} {                      systemAdvisor: '', leadAdvisor: '', finalAdvisor: '',                      category: 'OTHER', tag: 'I', isFleet: false, kmVal: 0, calories: 0,                     hasReplacementCar: false, isLexus: false, isPassengerCar: true, isContinuation: false, isEmployee: false, isTires: false, isEV: false, isCommercialVehicle: false                  };                  if (uniqueCarsMap.has(displayPlate)) {                     let existingCar = uniqueCarsMap.get(displayPlate);                      if (!existingCar.isEmployee && !tData.isEmployee) {                         const isNewCarInspection = (tData.category === 'DUZY_PRZEGLAD' \vert{}\vert{} tData.category === 'MALY_PRZEGLAD');                         const isExistingCarInspection = (existingCar.category === 'DUZY_PRZEGLAD' \vert{}\vert{} existingCar.category === 'MALY_PRZEGLAD');                          if (isNewCarInspection && !isExistingCarInspection) {                             existingCar.category = tData.category;                             existingCar.tag = tData.tag;                             existingCar.calories = tData.calories;                             existingCar.kmVal = tData.kmVal;                         }                     }                      if (tData.isFleet) existingCar.isFleet = true;                     if (tData.isLexus) existingCar.isLexus = true;                     if (tData.hasReplacementCar) existingCar.hasReplacementCar = true;                     if (tData.isTires) existingCar.isTires = true;                     if (tData.isEV) existingCar.isEV = true;                     if (tData.isCommercialVehicle) existingCar.isCommercialVehicle = true;                      if (startHour < existingCar.startHour) {                         existingCar.startHour = startHour;                         existingCar.timeStr = fullTimeStr;                         existingCar.groupName = groupName;                     }                 } else {                     uniqueCarsMap.set(displayPlate, {                         plate: displayPlate,                         startHour: startHour,                         timeStr: fullTimeStr,                         groupName: groupName,                         systemAdvisor: tData.systemAdvisor,                         leadAdvisor: tData.leadAdvisor,                         finalAdvisor: tData.finalAdvisor,                         category: tData.category,                         tag: tData.tag,                         isFleet: tData.isFleet,                         kmVal: tData.kmVal,                         calories: tData.calories,                         hasReplacementCar: tData.hasReplacementCar,                         isLexus: tData.isLexus,                         isContinuation: tData.isContinuation,                         isEmployee: tData.isEmployee,                         isTires: tData.isTires,                         isEV: tData.isEV,                         isCommercialVehicle: tData.isCommercialVehicle                     });                 }             }         }          let allCars = Array.from(uniqueCarsMap.values());         const sortChronologically = (a, b) => a.timeStr.localeCompare(b.timeStr);         allCars.sort(sortChronologically);          allCars.forEach(car => {             let assignedAdvisorName = car.finalAdvisor;             let advInfo = assignedAdvisorName ? ` (${assignedAdvisorName})` : '';
 
             let tagHtml = getTagHTML(car.category, car.tag);
             let kontHtml = car.isContinuation ? ` <span style="color:#d35400; font-weight:bold;">[K${advInfo}]</span>` : (assignedAdvisorName ? ` <span style="color:#27ae60; font-size:11px;">${advInfo}</span>` : '');
@@ -572,7 +295,7 @@
             let tiresExtraHtml = (car.isTires && car.tag !== 'O') ? ' <span style="color:#8e44ad; font-weight:bold;">[🛞]</span>' : '';
             let commHtml = car.isCommercialVehicle ? ' <span style="color:#d35400; font-weight:bold;">[PRO]</span>' : '';
 
-            car.display = `<b>${tagHtml} ${car.plate}</b> (${car.timeStr})${calHtml}${kontHtml}${zastHtml}${lexHtml}${evHtml}${commHtml}${tiresExtraHtml} <span style="color:#7f8c8d; font-size:11px;">[${car.groupName}]</span>`;
+            car.display = `<b>${tagHtml}${car.plate}</b> (${car.timeStr})${calHtml}${kontHtml}${zastHtml}${lexHtml}${evHtml}${commHtml}${tiresExtraHtml} <span style="color:#7f8c8d; font-size:11px;">[${car.groupName}]</span>`;
 
             let sGroup = shortenGroupName(car.groupName);
             let printKont = car.isContinuation ? ` [K${advInfo}]` : (assignedAdvisorName ? ` ${advInfo}` : '');
@@ -581,7 +304,7 @@
             let printEV = car.isEV ? ' ⚡' : '';
             let printComm = car.isCommercialVehicle ? ' 🚚' : '';
             let printTires = (car.isTires && car.tag !== 'O') ? ' 🛞' : '';
-            car.rawPrint = `<div class="cell-main">[${car.tag}]${printKont} ${car.plate}</div><div class="cell-sub">${car.timeStr} (${sGroup})${printZast}${printLex}${printEV}${printComm}${printTires}</div>`;
+            car.rawPrint = `<div class="cell-main">[${car.tag}]${printKont}${car.plate}</div><div class="cell-sub">${car.timeStr} (${sGroup})${printZast}${printLex}${printEV}${printComm}${printTires}</div>`;
         });
 
         if (currentMode === 'rozpiska') {
@@ -604,14 +327,18 @@
         let unassigned = [];
         const categories = ['DUZY_PRZEGLAD', 'MALY_PRZEGLAD', 'WERYFIKACJA', 'OTHER'];
 
-        // Przydzielanie sztywne (tylko wtedy gdy doradca pracuje na danej zmianie)
+        // Przydzielanie sztywne (Hard Match)
         allCars.forEach(car => {
             if (!car.finalAdvisor) {
                 car.isHardMatched = false;
                 return;
             }
 
-            let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal));
+            let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag));
+            
+            // Profil "Opony" blokuje sztywne dopasowanie do czegokolwiek innego niż czysty tag 'O'
+            eligible = eligible.filter(adv => !adv.isTiresOnly || car.tag === 'O');
+
             if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
 
             let matched = eligible.filter(adv => isAdvisorMatch(adv.name, car.finalAdvisor));
@@ -636,10 +363,9 @@
         let totalPrivCal1 = privateUnassignedCars1.reduce((sum, c) => sum + c.calories, 0);
         let totalPrivCal3 = privateUnassignedCars3.reduce((sum, c) => sum + c.calories, 0);
 
-        let advShift1Count = advisorsConfig.filter(a => (a.shift === 1 || a.shift === 2 || a.shift === 4) && !a.isFleetOnly).length || 1;
-        let advShift3Count = advisorsConfig.filter(a => (a.shift === 3 || a.shift === 2) && !a.isFleetOnly).length || 1;
+        let advShift1Count = advisorsConfig.filter(a => (a.shift === 1 || a.shift === 2 || a.shift === 4) && !a.isFleetOnly && !a.isTiresOnly).length || 1;
+        let advShift3Count = advisorsConfig.filter(a => (a.shift === 3 || a.shift === 2) && !a.isFleetOnly && !a.isTiresOnly).length || 1;
 
-        // NOWY BARDZIEJ CIASNY KONTROLER CAP: 10% + 10pt
         let caloriePrivCapShift1 = Math.round((totalPrivCal1 / advShift1Count) * 1.1) + 10;
         let caloriePrivCapShift3 = Math.round((totalPrivCal3 / advShift3Count) * 1.1) + 10;
 
@@ -655,8 +381,16 @@
                 let groups = {};
 
                 catCars.forEach(car => {
-                    let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal));
+                    let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag));
                     if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
+
+                    // Doradcy z zaznaczonym "Opony" mają BEZWZGLĘDNY PRIORITET do czystych opon [O]
+                    if (car.tag === 'O') {
+                        let tiresOnlyEligible = eligible.filter(adv => adv.isTiresOnly);
+                        if (tiresOnlyEligible.length > 0) {
+                            eligible = tiresOnlyEligible;
+                        }
+                    }
 
                     if (isSaturdayMode && car.isCommercialVehicle) {
                         let proEligible = eligible.filter(adv => isProfessionalAdvisor(adv.name));
@@ -798,7 +532,7 @@
 
         let dayText = selectedDayOffset === 0 ? "Dzisiaj" : "Jutro";
         let satText = isSaturdayMode ? " (TRYB SOBOTNI)" : "";
-        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie aut na rozpisce (${dayText}${satText}): ${allCars.length}</p>`;
+        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie aut na rozpisce (${dayText}${satText}):${allCars.length}</p>`;
 
         for (const key in scheduleData) {
             const cat = scheduleData[key];
@@ -913,15 +647,16 @@
         const resultsDiv = document.getElementById('tm-results');
         let dayText = selectedDayOffset === 0 ? "Dzisiaj" : "Jutro";
         let satText = isSaturdayMode ? " (TRYB SOBOTNI)" : "";
-        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie wykrytych aut (${dayText}${satText}): ${totalCars}</p>`;
+        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie wykrytych aut (${dayText}${satText}):${totalCars}</p>`;
 
         advisorsConfig.forEach(adv => {
             const cars = assignment[adv.name] || [];
             let fleetTag = adv.isFleetOnly ? ' <span style="color:#27ae60; font-size:10px;">[Flota do 75k]</span>' : '';
+            let tiresTag = adv.isTiresOnly ? ' <span style="color:#8e44ad; font-size:10px;">[Tylko Opony]</span>' : '';
             let proTag = isProfessionalAdvisor(adv.name) ? ' <span style="color:#d35400; font-size:10px;">[PRO]</span>' : '';
             html += `<div style="margin-bottom:12px; background:#f9f9f9; padding:8px; border-radius:4px; border:1px solid #eee;">
                 <div style="font-weight:bold; font-size:13px; border-bottom:1px solid #ddd; padding-bottom:4px; margin-bottom:6px; color:#2c3e50;">
-                    ${adv.name}${fleetTag}${proTag} <span style="font-size:11px; color:#7f8c8d; font-weight:normal;">(Suma: ${adv.counts.total} aut | W:${adv.counts.WERYFIKACJA} I:${adv.counts.OTHER} | ${adv.totalCalories} pkt)</span>
+                    ${adv.name}${fleetTag}${tiresTag}${proTag} <span style="font-size:11px; color:#7f8c8d; font-weight:normal;">(Suma: ${adv.counts.total} aut \vert{} W:${adv.counts.WERYFIKACJA} I:${adv.counts.OTHER} \vert{}${adv.totalCalories} pkt)</span>
                 </div>`;
 
             if (cars.length === 0) {
@@ -1011,7 +746,8 @@
                 morningAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
 
@@ -1048,7 +784,8 @@
                 afternoonAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
 
@@ -1084,7 +821,8 @@
                 advisorsConfig.forEach(adv => {
                     let cars = assignment[adv.name] || [];
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                    let tiresLbl = adv.isTiresOnly ? ' (Opony)' : '';
+                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
                 });
                 html += `</tr></thead><tbody>`;
 
@@ -1138,324 +876,4 @@
             th { background-color: #eef2f3; font-weight: bold; font-size: 12px; }
             .cell-main { font-weight: bold; font-size: 11px; color: #000; }
             .cell-sub { font-size: 10px; color: #555; margin-top: 2px; }
-            .gra-box { margin-bottom: 15px; border: 1px solid #ffeeba; padding: 8px; background: #fff3cd; border-radius: 4px; }
-            .gra-header { font-weight: bold; color: #856404; font-size: 12px; margin-bottom: 5px; }
-            .search-info { background: #e3f2fd; color: #0d47a1; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 15px; font-weight: bold; }
-        </style></head><body><div class="container">`;
-
-        html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
-        html += `<div class="search-info">🔍 Naciśnij <u>Ctrl + F</u>, aby wyszukać numer rejestracyjny lub nazwisko!</div>`;
-
-        if (!isSaturdayMode) {
-            let morningAdvisors = advisorsConfig.filter(a => a.shift === 1 || a.shift === 2 || a.shift === 4);
-            let afternoonAdvisors = advisorsConfig.filter(a => a.shift === 3 || a.shift === 2);
-
-            html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
-            if (morningAdvisors.length > 0) {
-                html += `<table><thead><tr>`;
-                morningAdvisors.forEach(adv => {
-                    let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-                });
-                html += `</tr></thead><tbody>`;
-
-                let maxRows = Math.max(...morningAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour < 13).length), 0);
-                for (let r = 0; r < maxRows; r++) {
-                    html += `<tr>`;
-                    morningAdvisors.forEach(adv => {
-                        let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
-                    });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
-            }
-
-            if (gra1.length > 0) {
-                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                gra1.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
-            }
-
-            html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
-            if (afternoonAdvisors.length > 0) {
-                html += `<table><thead><tr>`;
-                afternoonAdvisors.forEach(adv => {
-                    let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-                });
-                html += `</tr></thead><tbody>`;
-
-                let maxRows = Math.max(...afternoonAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour >= 13).length), 0);
-                for (let r = 0; r < maxRows; r++) {
-                    html += `<tr>`;
-                    afternoonAdvisors.forEach(adv => {
-                        let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
-                    });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
-            }
-
-            if (gra3.length > 0) {
-                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                gra3.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
-            }
-        } else {
-            html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
-            if (advisorsConfig.length > 0) {
-                html += `<table><thead><tr>`;
-                advisorsConfig.forEach(adv => {
-                    let cars = assignment[adv.name] || [];
-                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    html += `<th>${adv.name}${fleetLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-                });
-                html += `</tr></thead><tbody>`;
-
-                let maxRows = Math.max(...advisorsConfig.map(adv => (assignment[adv.name] || []).length), 0);
-                for (let r = 0; r < maxRows; r++) {
-                    html += `<tr>`;
-                    advisorsConfig.forEach(adv => {
-                        let cars = assignment[adv.name] || [];
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
-                    });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
-            }
-
-            if (gra3.length > 0 || gra1.length > 0) {
-                let allGra = [...gra1, ...gra3];
-                html += `<div class="gra-box"><div class="gra-header">GRA [${allGra.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                allGra.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
-            }
-        }
-
-        html += `</div></body></html>`;
-
-        let blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
-        let link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = filename;
-        link.click();
-    }
-
-    function createUI() {
-        const btn = document.createElement('button');
-        btn.innerHTML = '🚗';
-        btn.style.position = 'fixed';
-        btn.style.bottom = '20px';
-        btn.style.right = '20px';
-        btn.style.width = '45px';
-        btn.style.height = '45px';
-        btn.style.borderRadius = '50%';
-        btn.style.backgroundColor = '#cc0000';
-        btn.style.color = 'white';
-        btn.style.border = 'none';
-        btn.style.fontSize = '20px';
-        btn.style.cursor = 'pointer';
-        btn.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-        btn.style.zIndex = '10000';
-        btn.style.display = 'flex';
-        btn.style.alignItems = 'center';
-        btn.style.justifyContent = 'center';
-        btn.title = "Panel podziału aut";
-
-        const modal = document.createElement('div');
-        modal.id = 'tm-modal';
-        modal.style.position = 'fixed';
-        modal.style.bottom = '75px';
-        modal.style.right = '20px';
-        modal.style.width = '370px';
-        modal.style.maxHeight = '85vh';
-        modal.style.overflowY = 'auto';
-        modal.style.backgroundColor = '#ffffff';
-        modal.style.border = '1px solid #d1d1d1';
-        modal.style.borderRadius = '8px';
-        modal.style.boxShadow = '0 6px 12px rgba(0,0,0,0.2)';
-        modal.style.padding = '15px';
-        modal.style.zIndex = '9999';
-        modal.style.display = 'none';
-        modal.style.fontFamily = 'Segoe UI, Arial, sans-serif';
-
-        modal.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
-                <h3 style="margin: 0; font-size: 15px; color: #333;">System Kanri Auto-Podział</h3>
-                <span id="tm-close-modal" style="cursor: pointer; color: #888; font-weight: bold; font-size: 16px;">✕</span>
-            </div>
-
-            <!-- Zakładki Wyboru Dnia -->
-            <div style="display:flex; gap:5px; margin-bottom:8px;">
-                <button id="tm-day-today" style="flex:1; padding:5px; background:#2c3e50; color:white; border:none; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">
-                    📅 Dzisiaj
-                </button>
-                <button id="tm-day-tomorrow" style="flex:1; padding:5px; background:#bdc3c7; color:#333; border:none; border-radius:4px; font-weight:bold; font-size:11px; cursor:pointer;">
-                    📅 Jutro
-                </button>
-            </div>
-
-            <!-- Globalny Checkbox Soboty -->
-            <div style="margin-bottom:10px; padding:6px; background:#f1c40f; border-radius:4px; text-align:center;">
-                <label style="font-weight:bold; font-size:12px; color:#2c3e50; cursor:pointer; user-select:none;">
-                    <input type="checkbox" id="tm-sat-checkbox"> 🗓 Tryb Sobotni (Pełny grafik + Dostawczaki)
-                </label>
-            </div>
-
-            <!-- Zakładki Trybów -->
-            <div style="display:flex; gap:5px; margin-bottom:12px;">
-                <button id="tm-tab-podzial" style="flex:1; padding:6px; background:#cc0000; color:white; border:none; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">
-                    Podział Doradców
-                </button>
-                <button id="tm-tab-rozpiska" style="flex:1; padding:6px; background:#e0e0e0; color:#333; border:none; border-radius:4px; font-weight:bold; font-size:12px; cursor:pointer;">
-                    Rozpiska Usług
-                </button>
-            </div>
-
-            <div id="tm-advisors-section">
-                <div id="tm-advisors-list" style="margin-bottom: 10px;"></div>
-                <button id="tm-add-adv-btn" style="width: 100%; margin-bottom: 12px; padding: 6px; background: #f4f4f4; color: #555; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; cursor: pointer;">
-                    + Dodaj doradcę
-                </button>
-            </div>
-
-            <button id="tm-fetch-btn" style="width: 100%; padding: 10px; background: #cc0000; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; cursor: pointer;">
-                Pobierz i Generuj
-            </button>
-
-            <div id="tm-results" style="margin-top: 15px;"></div>
-        `;
-
-        document.body.appendChild(btn);
-        document.body.appendChild(modal);
-
-        const listContainer = document.getElementById('tm-advisors-list');
-        const advSection = document.getElementById('tm-advisors-section');
-        const tabPodzial = document.getElementById('tm-tab-podzial');
-        const tabRozpiska = document.getElementById('tm-tab-rozpiska');
-
-        const dayToday = document.getElementById('tm-day-today');
-        const dayTomorrow = document.getElementById('tm-day-tomorrow');
-        const satCheckbox = document.getElementById('tm-sat-checkbox');
-
-        function addAdvisorRow(defaultName = '', defaultShift = 1, defaultFleet = false) {
-            const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.gap = '5px';
-            row.style.alignItems = 'center';
-            row.style.marginBottom = '5px';
-            row.className = 'tm-adv-row';
-
-            let optionsHtml = PASSENGER_ADVISORS.map(advName => {
-                let selected = isAdvisorMatch(advName, defaultName) ? 'selected' : '';
-                return `<option value="${advName}" ${selected}>${advName}</option>`;
-            }).join('');
-
-            row.innerHTML = `
-                <select class="tm-adv-name" style="flex: 1; min-width: 0; padding: 5px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;">
-                    ${optionsHtml}
-                </select>
-                <select class="tm-adv-shift" style="width: 100px; padding: 5px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;">
-                    <option value="1" ${defaultShift === 1 ? 'selected' : ''}>Zm. 1 (&lt; 13:00)</option>
-                    <option value="2" ${defaultShift === 2 ? 'selected' : ''}>Zm. 2 (9-14)</option>
-                    <option value="3" ${defaultShift === 3 ? 'selected' : ''}>Zm. 3 (13-21)</option>
-                    <option value="4" ${defaultShift === 4 ? 'selected' : ''}>Sobota (7-15)</option>
-                </select>
-                <label style="font-size: 10px; display: flex; align-items: center; gap: 2px; cursor: pointer; user-select: none;" title="Uczący się: przyjmuje tylko przeglądy flotowe/KINTO do 75kkm oraz inne usługi po równo">
-                    <input type="checkbox" class="tm-adv-fleet" ${defaultFleet ? 'checked' : ''}> Flota
-                </label>
-                <button class="tm-adv-remove" style="background: transparent; color: red; border: none; font-weight: bold; cursor: pointer; padding: 0 3px;">✕</button>
-            `;
-
-            row.querySelector('.tm-adv-remove').onclick = () => row.remove();
-            listContainer.appendChild(row);
-        }
-
-        addAdvisorRow('Jakub Leczycki', 1, false);
-        addAdvisorRow('Norbert Longier', 2, false);
-
-        document.getElementById('tm-add-adv-btn').onclick = () => addAdvisorRow();
-
-        satCheckbox.onchange = () => {
-            isSaturdayMode = satCheckbox.checked;
-        };
-
-        dayToday.onclick = () => {
-            selectedDayOffset = 0;
-            dayToday.style.background = '#2c3e50';
-            dayToday.style.color = 'white';
-            dayTomorrow.style.background = '#bdc3c7';
-            dayTomorrow.style.color = '#333';
-        };
-
-        dayTomorrow.onclick = () => {
-            selectedDayOffset = 1;
-            dayTomorrow.style.background = '#2c3e50';
-            dayTomorrow.style.color = 'white';
-            dayToday.style.background = '#bdc3c7';
-            dayToday.style.color = '#333';
-        };
-
-        tabPodzial.onclick = () => {
-            currentMode = 'podzial';
-            tabPodzial.style.background = '#cc0000';
-            tabPodzial.style.color = 'white';
-            tabRozpiska.style.background = '#e0e0e0';
-            tabRozpiska.style.color = '#333';
-            advSection.style.display = 'block';
-        };
-
-        tabRozpiska.onclick = () => {
-            currentMode = 'rozpiska';
-            tabRozpiska.style.background = '#cc0000';
-            tabRozpiska.style.color = 'white';
-            tabPodzial.style.background = '#e0e0e0';
-            tabPodzial.style.color = '#333';
-            advSection.style.display = 'none';
-        };
-
-        btn.onclick = () => {
-            modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
-        };
-
-        document.getElementById('tm-close-modal').onclick = () => {
-            modal.style.display = 'none';
-        };
-
-        const fetchBtn = document.getElementById('tm-fetch-btn');
-
-        fetchBtn.onclick = async () => {
-            let advisorsConfig = [];
-
-            if (currentMode === 'podzial') {
-                const rows = document.querySelectorAll('.tm-adv-row');
-                rows.forEach(row => {
-                    const name = row.querySelector('.tm-adv-name').value.trim();
-                    const shift = parseInt(row.querySelector('.tm-adv-shift').value, 10);
-                    const isFleetOnly = row.querySelector('.tm-adv-fleet').checked;
-                    if (name) advisorsConfig.push({ name, shift, isFleetOnly });
-                });
-
-                if (advisorsConfig.length === 0) {
-                    alert("Musisz dodać przynajmniej jednego doradcę w tym trybie!");
-                    return;
-                }
-            }
-
-            fetchBtn.innerText = 'Przetwarzanie...';
-            document.getElementById('tm-results').innerHTML = '';
-            await fetchVehiclePlates(advisorsConfig);
-            fetchBtn.innerText = 'Pobierz i Generuj';
-        };
-    }
-
-    window.addEventListener('load', createUI);
-
-})();
+            .gra-box { margin-bottom: 15px; border: 1px solid #ffeeba; padding: 8px; background: #fff3cd; border-radius:
