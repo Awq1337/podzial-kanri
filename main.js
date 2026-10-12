@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Rozpiska v19.3
+// @name         Kanri - Inteligentny podział aut + Interaktywny HTML v19.4
 // @namespace    http://tampermonkey.net/
-// @version      19.3
-// @description  Rozszerzone wyłapywanie BLOKADA/WOLNE zlewających się ze słowami (np. DAREKWOLNEBLOKADA), dedykowany profil "Opony" ze stanowisk Opony, ciasny Cap (10%+10pt), GR Yaris/Supra, EV 25%, pracownicy [PRAC], Tryb Sobota i eksport HTML.
+// @version      19.4
+// @description  Interaktywny eksport HTML z Drag & Drop (przeciąganie aut z GRA do doradców z automatycznym przeliczaniem liczników), łapanie zlelepionych słów BLOKADA/WOLNE, profil Opony, Cap 10%+10pt.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -989,8 +989,8 @@
             <button id="tm-print-btn" style="flex:1; padding: 8px; background: #27ae60; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;">
                 🖨️ Drukuj Podział
             </button>
-            <button id="tm-download-btn" style="flex:1; padding: 8px; background: #2980b9; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;" title="Zapisuje plik HTML do udostępnienia na dysku sieciowym">
-                💾 Zapisz plik HTML
+            <button id="tm-download-btn" style="flex:1; padding: 8px; background: #2980b9; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;" title="Zapisuje interaktywny plik HTML z opcją przeciągania kafelków (Drag & Drop)">
+                💾 Zapisz plik HTML (Przeciąganie kafelków)
             </button>
         </div>`;
 
@@ -1086,7 +1086,7 @@
 
                 let maxAfternoonRows = 0;
                 afternoonAdvisors.forEach(adv => {
-                    let len = (assignment[adv.name] || []).filter(c => c.startHour >= 13).length;
+                    let len = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
                     if (len > maxAfternoonRows) maxAfternoonRows = len;
                 });
 
@@ -1155,6 +1155,7 @@
         printWin.document.close();
     }
 
+    // INTERAKTYWNY DYNAMICZNY EXPORT HTML Z OBSŁUGĄ DRAG & DROP
     function downloadAssignmentHTML(assignment, gra1, gra3, advisorsConfig) {
         let d = new Date();
         d.setDate(d.getDate() + selectedDayOffset);
@@ -1162,120 +1163,192 @@
         let filename = `Podzial_Aut_${today.replace(/\./g, '-')}.html`;
 
         let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Podział Aut - ${today}</title><style>
-            body { font-family: Arial, sans-serif; margin: 15px; font-size: 11px; background-color: #f4f6f7; }
-            .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+            body { font-family: Arial, sans-serif; margin: 15px; font-size: 11px; background-color: #f4f6f7; user-select: none; }
+            .container { max-width: 1300px; margin: 0 auto; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
             h2 { text-align: center; margin-bottom: 10px; font-size: 18px; color: #2c3e50; }
             h3 { text-align: left; margin-top: 20px; margin-bottom: 8px; font-size: 14px; color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 4px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 15px; table-layout: fixed; }
             th, td { border: 1px solid #ccc; padding: 6px; text-align: center; vertical-align: top; }
             th { background-color: #eef2f3; font-weight: bold; font-size: 12px; }
+            .drop-zone { min-height: 60px; background-color: #fafafa; transition: background-color 0.2s; }
+            .drop-zone.drag-over { background-color: #e3f2fd !important; border: 2px dashed #2196f3; }
+            .car-card { border: 1px solid #ccc; padding: 4px; background: #fff; border-radius: 4px; margin-bottom: 6px; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .car-card:active { cursor: grabbing; opacity: 0.6; }
             .cell-main { font-weight: bold; font-size: 11px; color: #000; }
             .cell-sub { font-size: 10px; color: #555; margin-top: 2px; }
-            .gra-box { margin-bottom: 15px; border: 1px solid #ffeeba; padding: 8px; background: #fff3cd; border-radius: 4px; }
+            .gra-box { margin-bottom: 15px; border: 1px solid #ffeeba; padding: 8px; background: #fff3cd; border-radius: 4px; min-height: 50px; }
             .gra-header { font-weight: bold; color: #856404; font-size: 12px; margin-bottom: 5px; }
+            .gra-container { display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; }
             .search-info { background: #e3f2fd; color: #0d47a1; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 15px; font-weight: bold; }
         </style></head><body><div class="container">`;
 
         html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
-        html += `<div class="search-info">🔍 Naciśnij <u>Ctrl + F</u>, aby wyszukać numer rejestracyjny lub nazwisko!</div>`;
+        html += `<div class="search-info">💡 <b>INTERAKTYWNY GRAFIK:</b> Możesz chwycić myszką dowolne auto z sekcji <b>GRA</b> i przeciągnąć je bezpośrednio do kolumny doradcy! Liczniki aut przeliczą się automatycznie.</div>`;
+
+        let cardIdCounter = 1;
 
         if (!isSaturdayMode) {
             let morningAdvisors = advisorsConfig.filter(a => a.shift === 1 || a.shift === 2 || a.shift === 4);
             let afternoonAdvisors = advisorsConfig.filter(a => a.shift === 3 || a.shift === 2);
 
+            // ZMIANA I
             html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
             if (morningAdvisors.length > 0) {
                 html += `<table><thead><tr>`;
-                morningAdvisors.forEach(adv => {
+                morningAdvisors.forEach((adv, idx) => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
                     let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
-                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                    html += `<th id="m-header-${idx}">${adv.name}${fleetLbl}${tiresLbl}<br><span class="adv-count" data-count="${cars.length}">(${cars.length} aut)</span></th>`;
                 });
-                html += `</tr></thead><tbody>`;
+                html += `</tr></thead><tbody><tr>`;
 
-                let maxRows = Math.max(...morningAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour < 13).length), 0);
-                for (let r = 0; r < maxRows; r++) {
-                    html += `<tr>`;
-                    morningAdvisors.forEach(adv => {
-                        let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                morningAdvisors.forEach((adv, idx) => {
+                    let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
+                    html += `<td class="drop-zone" data-adv-header="m-header-${idx}">`;
+                    cars.forEach(car => {
+                        let cId = `card-${cardIdCounter++}`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
                     });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
+                    html += `</td>`;
+                });
+                html += `</tr></tbody></table>`;
             }
 
             if (gra1.length > 0) {
-                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                gra1.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
+                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [<span id="gra1-count">${gra1.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra1-zone" data-gra-counter="gra1-count">`;
+                gra1.forEach(car => {
+                    let cId = `card-${cardIdCounter++}`;
+                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                });
                 html += `</div></div>`;
             }
 
+            // ZMIANA III
             html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
             if (afternoonAdvisors.length > 0) {
                 html += `<table><thead><tr>`;
-                afternoonAdvisors.forEach(adv => {
+                afternoonAdvisors.forEach((adv, idx) => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
                     let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
-                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                    html += `<th id="a-header-${idx}">${adv.name}${fleetLbl}${tiresLbl}<br><span class="adv-count" data-count="${cars.length}">(${cars.length} aut)</span></th>`;
                 });
-                html += `</tr></thead><tbody>`;
+                html += `</tr></thead><tbody><tr>`;
 
-                let maxRows = Math.max(...afternoonAdvisors.map(adv => (assignment[adv.name] || []).filter(c => c.startHour >= 13).length), 0);
-                for (let r = 0; r < maxRows; r++) {
-                    html += `<tr>`;
-                    afternoonAdvisors.forEach(adv => {
-                        let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                afternoonAdvisors.forEach((adv, idx) => {
+                    let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
+                    html += `<td class="drop-zone" data-adv-header="a-header-${idx}">`;
+                    cars.forEach(car => {
+                        let cId = `card-${cardIdCounter++}`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
                     });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
+                    html += `</td>`;
+                });
+                html += `</tr></tbody></table>`;
             }
 
             if (gra3.length > 0) {
-                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                gra3.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
+                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [<span id="gra3-count">${gra3.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra3-zone" data-gra-counter="gra3-count">`;
+                gra3.forEach(car => {
+                    let cId = `card-${cardIdCounter++}`;
+                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                });
                 html += `</div></div>`;
             }
         } else {
             html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
             if (advisorsConfig.length > 0) {
                 html += `<table><thead><tr>`;
-                advisorsConfig.forEach(adv => {
+                advisorsConfig.forEach((adv, idx) => {
                     let cars = assignment[adv.name] || [];
                     let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
                     let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
-                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
+                    html += `<th id="s-header-${idx}">${adv.name}${fleetLbl}${tiresLbl}<br><span class="adv-count" data-count="${cars.length}">(${cars.length} aut)</span></th>`;
                 });
-                html += `</tr></thead><tbody>`;
+                html += `</tr></thead><tbody><tr>`;
 
-                let maxRows = Math.max(...advisorsConfig.map(adv => (assignment[adv.name] || []).length), 0);
-                for (let r = 0; r < maxRows; r++) {
-                    html += `<tr>`;
-                    advisorsConfig.forEach(adv => {
-                        let cars = assignment[adv.name] || [];
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
+                advisorsConfig.forEach((adv, idx) => {
+                    let cars = assignment[adv.name] || [];
+                    html += `<td class="drop-zone" data-adv-header="s-header-${idx}">`;
+                    cars.forEach(car => {
+                        let cId = `card-${cardIdCounter++}`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
                     });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
+                    html += `</td>`;
+                });
+                html += `</tr></tbody></table>`;
             }
 
             if (gra3.length > 0 || gra1.length > 0) {
                 let allGra = [...gra1, ...gra3];
-                html += `<div class="gra-box"><div class="gra-header">GRA [${allGra.length} aut]:</div><div style="display:flex; flex-wrap:wrap; gap:8px;">`;
-                allGra.forEach(c => { html += `<div style="border:1px dashed #999; padding:4px; background:#fff; border-radius:3px;">${c.rawPrint}</div>`; });
+                html += `<div class="gra-box"><div class="gra-header">GRA [<span id="gra-sat-count">${allGra.length}</span> aut]:</div><div class="gra-container drop-zone" id="grasat-zone" data-gra-counter="gra-sat-count">`;
+                allGra.forEach(car => {
+                    let cId = `card-${cardIdCounter++}`;
+                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                });
                 html += `</div></div>`;
             }
         }
 
-        html += `</div></body></html>`;
+        // SKRYPT WBUDOWANY W PLIK HTML DLA DRAG & DROP
+        html += `<script>
+            function drag(ev) {
+                ev.dataTransfer.setData("text", ev.target.id);
+            }
+
+            document.addEventListener("DOMContentLoaded", function() {
+                const dropZones = document.querySelectorAll('.drop-zone');
+
+                dropZones.forEach(zone => {
+                    zone.addEventListener('dragover', function(e) {
+                        e.preventDefault();
+                        this.classList.add('drag-over');
+                    });
+
+                    zone.addEventListener('dragleave', function(e) {
+                        this.classList.remove('drag-over');
+                    });
+
+                    zone.addEventListener('drop', function(e) {
+                        e.preventDefault();
+                        this.classList.remove('drag-over');
+                        const cardId = e.dataTransfer.getData("text");
+                        const card = document.getElementById(cardId);
+                        if (!card) return;
+
+                        const oldZone = card.parentElement;
+                        this.appendChild(card);
+
+                        updateCount(oldZone);
+                        updateCount(this);
+                    });
+                });
+
+                function updateCount(zone) {
+                    if (!zone) return;
+                    
+                    // Jeśli to strefa doradcy w tabeli
+                    if (zone.dataset.advHeader) {
+                        const header = document.getElementById(zone.dataset.advHeader);
+                        if (header) {
+                            const countSpan = header.querySelector('.adv-count');
+                            const currentCount = zone.querySelectorAll('.car-card').length;
+                            countSpan.textContent = "(" + currentCount + " aut)";
+                        }
+                    }
+
+                    // Jeśli to strefa GRA
+                    if (zone.dataset.graCounter) {
+                        const counterSpan = document.getElementById(zone.dataset.graCounter);
+                        if (counterSpan) {
+                            const currentCount = zone.querySelectorAll('.car-card').length;
+                            counterSpan.textContent = currentCount;
+                        }
+                    }
+                }
+            });
+        </script></div></body></html>`;
 
         let blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
         let link = document.createElement('a');
@@ -1456,7 +1529,7 @@
             tabRozpiska.style.background = '#cc0000';
             tabRozpiska.style.color = 'white';
             tabPodzial.style.background = '#e0e0e0';
-            tabRozpiska.style.color = '#333';
+            tabPodzial.style.color = '#333';
             advSection.style.display = 'none';
         };
 
