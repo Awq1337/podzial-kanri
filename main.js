@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Równomierne Opony v19.5
+// @name         Kanri - Podział aut + Interaktywna Rozpiska z Przekreślaniem v19.6
 // @namespace    http://tampermonkey.net/
-// @version      19.5
-// @description  Bezwzględnie równomierny podział płatnych wymian kół/opon [O] między doradców, Drag & Drop w HTML, profil Opony ze stanowisk technicznych, Cap 10%+10pt, GR Yaris/Supra, EV 25%.
+// @version      19.6
+// @description  Interaktywna Rozpiska w HTML z opcją kliknięcia i przekreślenia przyjętych aut (oraz odklikania), Drag & Drop w Podziale, profil Opony ze stanowisk technicznych, Cap 10%+10pt, GR Yaris/Supra, EV 25%.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -18,7 +18,6 @@
     let selectedDayOffset = 0;   // 0 = Dzisiaj, 1 = Jutro
     let isSaturdayMode = false;  // Tryb Sobotni
 
-    // Lista doradców do rozwijanej listy w UI oraz dopasowań
     const PASSENGER_ADVISORS = [
         "Mikołaj Falkowski",
         "Paweł Okoński",
@@ -38,7 +37,6 @@
         "Kuba Jezierski"
     ];
 
-    // Doradcy dedykowani do aut dostawczych w sobotę
     const PROFESSIONAL_ADVISORS = [
         "Przemysław Frankiewicz",
         "Paweł Sołtysik",
@@ -70,7 +68,6 @@
             .replace(/Ń/g, 'N');
     }
 
-    // PANCERNE ŚCISŁE DOPASOWANIE IMIENIA I NAZWISKA
     function isAdvisorMatch(userInput, systemString) {
         if (!systemString || !userInput) return false;
 
@@ -203,7 +200,6 @@
             return { category: 'WERYFIKACJA', tag: 'W', isFleet, kmVal: 0, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // PRIORYTET DLA SUPRY
         if (isSupra) {
             const numMatchSupra = text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{2,3})\b/);
             let val = numMatchSupra ? parseInt(numMatchSupra[1], 10) : 30;
@@ -211,7 +207,6 @@
             return { category: 'DUZY_PRZEGLAD', tag: `${combinedPrefix}D${val}`, isFleet, kmVal: val, calories, isEmployee: false, isTires: isTiresService, isEV };
         }
 
-        // PRIORYTET DLA GR YARISA (10k/20k)
         if (isGRYaris) {
             let val = 10;
             const numMatchGR = text.match(/(\d{1,3})\s*(?:000|\s*000|K|KKM|KM)/) || text.match(/(?:OT|PRZEGLĄD|PRZEGLAD|PRZEGL)[^\d]*(\d{1,3})\b/);
@@ -330,7 +325,6 @@
             if (!timeMatch) return false;
         }
 
-        // WARUNEK PROFILU OPONY: Przyjmuje TYLKO I WYŁĄCZNIE czystą wymianę opon [O] ZE STANOWISKA "OPONY"
         if (adv.isTiresOnly) {
             return carTag === 'O' && isTiresStand;
         }
@@ -474,7 +468,6 @@
                 let rawPlate = titleMatch[1].trim();
                 let plate = rawPlate.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-                // BEZPIECZNE SPRAWDZANIE CZARNEJ LISTY DLA SŁÓW SKLEJONYCH (NP. DAREKWOLNEBLOKADA)
                 let isBlacklisted = plate.includes('BLOKADA') || 
                                     plate.includes('WOLNE') || 
                                     plate.includes('URLOP') || 
@@ -633,7 +626,6 @@
 
             let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag, car.isTiresStand));
             
-            // Profil "Opony" blokuje sztywne dopasowanie do czegokolwiek innego niż czysty tag 'O' ZE STANOWISKA OPONY
             eligible = eligible.filter(adv => !adv.isTiresOnly || (car.tag === 'O' && car.isTiresStand));
 
             if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
@@ -681,14 +673,12 @@
                     let eligible = advisorsConfig.filter(adv => isEligible(adv, car.startHour, car.category, car.isFleet, car.kmVal, car.tag, car.isTiresStand));
                     if (car.isLexus) eligible = eligible.filter(adv => canHandleLexus(adv.name));
 
-                    // Doradcy z zaznaczonym "Opony" mają BEZWZGLĘDNY PRIORYTET TYLKO do czystych opon [O] ZE STANOWISK "OPONY"
                     if (car.tag === 'O' && car.isTiresStand) {
                         let tiresOnlyEligible = eligible.filter(adv => adv.isTiresOnly);
                         if (tiresOnlyEligible.length > 0) {
                             eligible = tiresOnlyEligible;
                         }
                     } else {
-                        // Jeśli to nie jest stanowisko "Opony", to wykluczamy doradców z zaznaczonym "Opony"
                         eligible = eligible.filter(adv => !adv.isTiresOnly);
                     }
 
@@ -875,39 +865,42 @@
         }
 
         html += `<button id="tm-print-schedule-btn" style="width: 100%; margin-top: 10px; padding: 8px; background: #27ae60; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer;">
-            🖨️ Drukuj Rozpiskę
+            🖨️ Drukuj / Pobierz Interaktywną Rozpiskę HTML
         </button>`;
 
         resultsDiv.innerHTML = html;
 
         document.getElementById('tm-print-schedule-btn').onclick = () => {
-            printScheduleTable(scheduleData);
+            downloadScheduleHTML(scheduleData);
         };
     }
 
-    function printScheduleTable(scheduleData) {
-        let printWin = window.open('', '_blank');
-        if (!printWin) {
-            alert("Przeglądarka zablokowała okno druku!");
-            return;
-        }
-
+    // INTERAKTYWNA ROZPISKA Z OPCJĄ PRZEKREŚLANIA KAFELKÓW I ODKLIKANIA
+    function downloadScheduleHTML(scheduleData) {
         let d = new Date();
         d.setDate(d.getDate() + selectedDayOffset);
         let today = d.toLocaleDateString('pl-PL');
+        let filename = `Rozpiska_Aut_Hala_${today.replace(/\./g, '-')}.html`;
 
-        let html = `<html><head><title>Rozpiska Aut - ${today}</title><style>
-            body { font-family: Arial, sans-serif; margin: 10px; font-size: 11px; }
-            h2 { text-align: center; margin-bottom: 10px; font-size: 16px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-            th, td { border: 1px solid #000; padding: 5px; text-align: center; vertical-align: top; width: 25%; }
+        let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Rozpiska Aut - ${today}</title><style>
+            body { font-family: Arial, sans-serif; margin: 15px; font-size: 11px; background-color: #f4f6f7; user-select: none; }
+            .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+            h2 { text-align: center; margin-bottom: 10px; font-size: 18px; color: #2c3e50; }
+            .search-info { background: #e3f2fd; color: #0d47a1; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 15px; font-weight: bold; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 15px; table-layout: fixed; }
+            th, td { border: 1px solid #000; padding: 6px; text-align: center; vertical-align: top; width: 25%; }
             th { background-color: #f2f2f2; font-weight: bold; font-size: 12px; }
+            .shift-header { background-color: #e9ecef; font-weight: bold; text-align: left; padding: 6px 10px; font-size: 12px; }
+            .car-item { border: 1px solid #ddd; background: #fff; padding: 5px; margin-bottom: 5px; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+            .car-item:hover { border-color: #3498db; background: #f0f8ff; }
+            .car-item.completed { text-decoration: line-through; background-color: #d4edda !important; border-color: #c3e6cb !important; opacity: 0.6; }
             .cell-main { font-weight: bold; font-size: 11px; }
-            .cell-sub { font-size: 10px; color: #333; }
-            .shift-header { background-color: #e9ecef; font-weight: bold; text-align: left; padding: 4px 8px; }
-        </style></head><body>`;
+            .cell-sub { font-size: 10px; color: #444; margin-top: 2px; }
+        </style></head><body><div class="container">`;
 
         html += `<h2>Rozpiska Aut na Hali - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
+        html += `<div class="search-info">✅ <b>CHECK-LISTA PRZYJĘĆ:</b> Kliknij na dowolne auto, aby oznaczyć je jako <b>PRZYJĘTE (przekreślenie)</b>. Kliknij ponownie, aby cofnąć!</div>`;
+
         html += `<table><thead><tr>
             <th>Małe Przeglądy [M]</th>
             <th>Duże Przeglądy [D]</th>
@@ -921,7 +914,9 @@
             html += `<tr><td colspan="4" class="shift-header">ZMIANA 1 (6:00 - 13:00)</td></tr><tr>`;
             keys.forEach(k => {
                 html += `<td>`;
-                scheduleData[k].shift1.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
+                scheduleData[k].shift1.forEach(c => { 
+                    html += `<div class="car-item" onclick="toggleComplete(this)">${c.rawPrint}</div>`; 
+                });
                 html += `</td>`;
             });
             html += `</tr>`;
@@ -929,7 +924,9 @@
             html += `<tr><td colspan="4" class="shift-header">ZMIANA 2 (13:00 - 21:00)</td></tr><tr>`;
             keys.forEach(k => {
                 html += `<td>`;
-                scheduleData[k].shift2.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
+                scheduleData[k].shift2.forEach(c => { 
+                    html += `<div class="car-item" onclick="toggleComplete(this)">${c.rawPrint}</div>`; 
+                });
                 html += `</td>`;
             });
             html += `</tr>`;
@@ -937,237 +934,31 @@
             html += `<tr><td colspan="4" class="shift-header">SOBOTA (CAŁY DZIEŃ)</td></tr><tr>`;
             keys.forEach(k => {
                 html += `<td>`;
-                scheduleData[k].shift2.forEach(c => { html += `<div style="margin-bottom:5px;">${c.rawPrint}</div>`; });
+                scheduleData[k].shift2.forEach(c => { 
+                    html += `<div class="car-item" onclick="toggleComplete(this)">${c.rawPrint}</div>`; 
+                });
                 html += `</td>`;
             });
             html += `</tr>`;
         }
 
         html += `</tbody></table>`;
-        html += `<script>window.onload = function() { window.print(); };</script></body></html>`;
+        
+        // LOGIKA KLIKANIA I PRZEKREŚLANIA WBUDOWANA W HTML
+        html += `<script>
+            function toggleComplete(element) {
+                element.classList.toggle('completed');
+            }
+        </script></div></body></html>`;
 
-        printWin.document.write(html);
-        printWin.document.close();
+        let blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+        let link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
     }
 
-    function renderAssignmentResults(assignment, unassigned, gra1, gra3, totalCars, advisorsConfig) {
-        const resultsDiv = document.getElementById('tm-results');
-        let dayText = selectedDayOffset === 0 ? "Dzisiaj" : "Jutro";
-        let satText = isSaturdayMode ? " (TRYB SOBOTNI)" : "";
-        let html = `<p style="font-size:12px; font-weight:bold; margin-bottom:10px;">Łącznie wykrytych aut (${dayText}${satText}): ${totalCars}</p>`;
-
-        advisorsConfig.forEach(adv => {
-            const cars = assignment[adv.name] || [];
-            let fleetTag = adv.isFleetOnly ? ' <span style="color:#27ae60; font-size:10px;">[Flota do 75k]</span>' : '';
-            let tiresTag = adv.isTiresOnly ? ' <span style="color:#8e44ad; font-size:10px;">[Tylko Stanowisko Opony]</span>' : '';
-            let proTag = isProfessionalAdvisor(adv.name) ? ' <span style="color:#d35400; font-size:10px;">[PRO]</span>' : '';
-            html += `<div style="margin-bottom:12px; background:#f9f9f9; padding:8px; border-radius:4px; border:1px solid #eee;">
-                <div style="font-weight:bold; font-size:13px; border-bottom:1px solid #ddd; padding-bottom:4px; margin-bottom:6px; color:#2c3e50;">
-                    ${adv.name}${fleetTag}${tiresTag}${proTag} <span style="font-size:11px; color:#7f8c8d; font-weight:normal;">(Suma: ${adv.counts.total} aut | W:${adv.counts.WERYFIKACJA} I:${adv.counts.OTHER} | ${adv.totalCalories} pkt)</span>
-                </div>`;
-
-            if (cars.length === 0) {
-                html += `<div style="font-size:11px; color:#95a5a6; font-style:italic;">Brak przydzielonych aut</div>`;
-            } else {
-                cars.forEach(car => {
-                    html += `<div style="font-size:11px; margin-bottom:3px; line-height:1.3;">${car.display}</div>`;
-                });
-            }
-            html += `</div>`;
-        });
-
-        if (gra1.length > 0 || gra3.length > 0) {
-            html += `<div style="margin-top:10px; padding:8px; background:#fff3cd; border:1px solid #ffeeba; border-radius:4px;">
-                <div style="font-weight:bold; font-size:12px; color:#856404; margin-bottom:4px;">GRA:</div>`;
-            if (gra1.length > 0) {
-                html += `<div style="font-size:11px; font-weight:bold; color:#856404; margin-top:2px;">Zmiana 1:</div>`;
-                gra1.forEach(c => html += `<div style="font-size:11px;">${c.display}</div>`);
-            }
-            if (gra3.length > 0) {
-                html += `<div style="font-size:11px; font-weight:bold; color:#856404; margin-top:2px;">Zmiana 3:</div>`;
-                gra3.forEach(c => html += `<div style="font-size:11px;">${c.display}</div>`);
-            }
-            html += `</div>`;
-        }
-
-        if (unassigned.length > 0) {
-            html += `<div style="margin-top:10px; padding:8px; background:#f8d7da; border:1px solid #f5c6cb; border-radius:4px;">
-                <div style="font-weight:bold; font-size:12px; color:#721c24; margin-bottom:4px;">Nieprzydzielone:</div>`;
-            unassigned.forEach(c => html += `<div style="font-size:11px;">${c.display}</div>`);
-            html += `</div>`;
-        }
-
-        html += `<div style="display:flex; gap:5px; margin-top:10px;">
-            <button id="tm-print-btn" style="flex:1; padding: 8px; background: #27ae60; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;">
-                🖨️ Drukuj Podział
-            </button>
-            <button id="tm-download-btn" style="flex:1; padding: 8px; background: #2980b9; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer;" title="Zapisuje interaktywny plik HTML z opcją przeciągania kafelków (Drag & Drop)">
-                💾 Zapisz plik HTML (Przeciąganie kafelków)
-            </button>
-        </div>`;
-
-        resultsDiv.innerHTML = html;
-
-        document.getElementById('tm-print-btn').onclick = () => {
-            printAssignmentTable(assignment, gra1, gra3, advisorsConfig);
-        };
-
-        document.getElementById('tm-download-btn').onclick = () => {
-            downloadAssignmentHTML(assignment, gra1, gra3, advisorsConfig);
-        };
-    }
-
-    function printAssignmentTable(assignment, gra1, gra3, advisorsConfig) {
-        let printWin = window.open('', '_blank');
-        if (!printWin) {
-            alert("Przeglądarka zablokowała okno druku!");
-            return;
-        }
-
-        let d = new Date();
-        d.setDate(d.getDate() + selectedDayOffset);
-        let today = d.toLocaleDateString('pl-PL');
-
-        let morningAdvisors = advisorsConfig.filter(a => a.shift === 1 || a.shift === 2 || a.shift === 4);
-        let afternoonAdvisors = advisorsConfig.filter(a => a.shift === 3 || a.shift === 2);
-
-        let html = `<html><head><title>Podział Aut - ${today}</title><style>
-            body { font-family: Arial, sans-serif; margin: 10px; font-size: 11px; }
-            h2 { text-align: center; margin-bottom: 5px; font-size: 16px; }
-            h3 { text-align: left; margin-top: 10px; margin-bottom: 5px; font-size: 13px; color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 3px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-            th, td { border: 1px solid #000; padding: 4px; text-align: center; vertical-align: top; }
-            th { background-color: #f2f2f2; font-weight: bold; font-size: 11px; }
-            .cell-main { font-weight: bold; font-size: 11px; }
-            .cell-sub { font-size: 10px; color: #333; }
-            .gra-header { background-color: #fff3cd; font-weight: bold; text-align: left; padding: 4px; font-size: 11px; }
-            .page-break { page-break-before: always; margin-top: 20px; }
-        </style></head><body>`;
-
-        html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
-
-        if (!isSaturdayMode) {
-            html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
-            if (morningAdvisors.length > 0) {
-                html += `<table><thead><tr>`;
-                morningAdvisors.forEach(adv => {
-                    let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
-                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-                });
-                html += `</tr></thead><tbody>`;
-
-                let maxMorningRows = 0;
-                morningAdvisors.forEach(adv => {
-                    let len = (assignment[adv.name] || []).filter(c => c.startHour < 13).length;
-                    if (len > maxMorningRows) maxMorningRows = len;
-                });
-
-                for (let r = 0; r < maxMorningRows; r++) {
-                    html += `<tr>`;
-                    morningAdvisors.forEach(adv => {
-                        let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
-                    });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
-            }
-
-            if (gra1.length > 0) {
-                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                    <div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
-                gra1.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
-            }
-
-            html += `<div class="page-break"></div>`;
-            html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
-            if (afternoonAdvisors.length > 0) {
-                html += `<table><thead><tr>`;
-                afternoonAdvisors.forEach(adv => {
-                    let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
-                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-                });
-                html += `</tr></thead><tbody>`;
-
-                let maxAfternoonRows = 0;
-                afternoonAdvisors.forEach(adv => {
-                    let len = (assignment[adv.name] || []).filter(c => c.startHour >= 13).length;
-                    if (len > maxAfternoonRows) maxAfternoonRows = len;
-                });
-
-                for (let r = 0; r < maxAfternoonRows; r++) {
-                    html += `<tr>`;
-                    afternoonAdvisors.forEach(adv => {
-                        let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
-                    });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
-            }
-
-            if (gra3.length > 0) {
-                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                    <div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
-                gra3.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
-            }
-        } else {
-            html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
-            if (advisorsConfig.length > 0) {
-                html += `<table><thead><tr>`;
-                advisorsConfig.forEach(adv => {
-                    let cars = assignment[adv.name] || [];
-                    let fleetLbl = adv.isFleetOnly ? ' (Flota)' : '';
-                    let tiresLbl = adv.isTiresOnly ? ' (Opony St.)' : '';
-                    html += `<th>${adv.name}${fleetLbl}${tiresLbl}<br><span style="font-weight:normal; font-size:10px;">(${cars.length} aut)</span></th>`;
-                });
-                html += `</tr></thead><tbody>`;
-
-                let maxSatRows = 0;
-                advisorsConfig.forEach(adv => {
-                    let len = (assignment[adv.name] || []).length;
-                    if (len > maxSatRows) maxSatRows = len;
-                });
-
-                for (let r = 0; r < maxSatRows; r++) {
-                    html += `<tr>`;
-                    advisorsConfig.forEach(adv => {
-                        let cars = assignment[adv.name] || [];
-                        let car = cars[r];
-                        html += `<td>${car ? car.rawPrint : ''}</td>`;
-                    });
-                    html += `</tr>`;
-                }
-                html += `</tbody></table>`;
-            }
-
-            if (gra3.length > 0 || gra1.length > 0) {
-                let allGra = [...gra1, ...gra3];
-                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                    <div class="gra-header">GRA [${allGra.length} aut]:</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
-                allGra.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
-            }
-        }
-
-        html += `<script>window.onload = function() { window.print(); };</script></body></html>`;
-
-        printWin.document.write(html);
-        printWin.document.close();
-    }
-
-    // INTERAKTYWNY DYNAMICZNY EXPORT HTML Z OBSŁUGĄ DRAG & DROP
+    // INTERAKTYWNY DYNAMICZNY EXPORT HTML PODZIAŁU DLA DORADCÓW (DRAG & DROP)
     function downloadAssignmentHTML(assignment, gra1, gra3, advisorsConfig) {
         let d = new Date();
         d.setDate(d.getDate() + selectedDayOffset);
@@ -1184,8 +975,9 @@
             th { background-color: #eef2f3; font-weight: bold; font-size: 12px; }
             .drop-zone { min-height: 60px; background-color: #fafafa; transition: background-color 0.2s; }
             .drop-zone.drag-over { background-color: #e3f2fd !important; border: 2px dashed #2196f3; }
-            .car-card { border: 1px solid #ccc; padding: 4px; background: #fff; border-radius: 4px; margin-bottom: 6px; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .car-card { border: 1px solid #ccc; padding: 4px; background: #fff; border-radius: 4px; margin-bottom: 6px; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s; }
             .car-card:active { cursor: grabbing; opacity: 0.6; }
+            .car-card.completed { text-decoration: line-through; background-color: #d4edda !important; border-color: #c3e6cb !important; opacity: 0.6; }
             .cell-main { font-weight: bold; font-size: 11px; color: #000; }
             .cell-sub { font-size: 10px; color: #555; margin-top: 2px; }
             .gra-box { margin-bottom: 15px; border: 1px solid #ffeeba; padding: 8px; background: #fff3cd; border-radius: 4px; min-height: 50px; }
@@ -1195,7 +987,7 @@
         </style></head><body><div class="container">`;
 
         html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
-        html += `<div class="search-info">💡 <b>INTERAKTYWNY GRAFIK:</b> Możesz chwycić myszką dowolne auto z sekcji <b>GRA</b> i przeciągnąć je bezpośrednio do kolumny doradcy! Liczniki aut przeliczą się automatycznie.</div>`;
+        html += `<div class="search-info">💡 <b>INTERAKTYWNY PODZIAŁ:</b> Przeciągaj auta z <b>GRA</b> do doradców! Kliknij kafelek auta, aby go <b>PRZEKREŚLIĆ / ODKLIĆ (Check-lista)</b>.</div>`;
 
         let cardIdCounter = 1;
 
@@ -1220,7 +1012,7 @@
                     html += `<td class="drop-zone" data-adv-header="m-header-${idx}">`;
                     cars.forEach(car => {
                         let cId = `card-${cardIdCounter++}`;
-                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
                     });
                     html += `</td>`;
                 });
@@ -1231,7 +1023,7 @@
                 html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [<span id="gra1-count">${gra1.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra1-zone" data-gra-counter="gra1-count">`;
                 gra1.forEach(car => {
                     let cId = `card-${cardIdCounter++}`;
-                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
                 });
                 html += `</div></div>`;
             }
@@ -1253,7 +1045,7 @@
                     html += `<td class="drop-zone" data-adv-header="a-header-${idx}">`;
                     cars.forEach(car => {
                         let cId = `card-${cardIdCounter++}`;
-                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
                     });
                     html += `</td>`;
                 });
@@ -1264,7 +1056,7 @@
                 html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [<span id="gra3-count">${gra3.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra3-zone" data-gra-counter="gra3-count">`;
                 gra3.forEach(car => {
                     let cId = `card-${cardIdCounter++}`;
-                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
                 });
                 html += `</div></div>`;
             }
@@ -1285,7 +1077,7 @@
                     html += `<td class="drop-zone" data-adv-header="s-header-${idx}">`;
                     cars.forEach(car => {
                         let cId = `card-${cardIdCounter++}`;
-                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
                     });
                     html += `</td>`;
                 });
@@ -1297,16 +1089,19 @@
                 html += `<div class="gra-box"><div class="gra-header">GRA [<span id="gra-sat-count">${allGra.length}</span> aut]:</div><div class="gra-container drop-zone" id="grasat-zone" data-gra-counter="gra-sat-count">`;
                 allGra.forEach(car => {
                     let cId = `card-${cardIdCounter++}`;
-                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)">${car.rawPrint}</div>`;
+                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
                 });
                 html += `</div></div>`;
             }
         }
 
-        // SKRYPT WBUDOWANY W PLIK HTML DLA DRAG & DROP
         html += `<script>
             function drag(ev) {
                 ev.dataTransfer.setData("text", ev.target.id);
+            }
+
+            function toggleComplete(element, event) {
+                element.classList.toggle('completed');
             }
 
             document.addEventListener("DOMContentLoaded", function() {
@@ -1340,7 +1135,6 @@
                 function updateCount(zone) {
                     if (!zone) return;
                     
-                    // Jeśli to strefa doradcy w tabeli
                     if (zone.dataset.advHeader) {
                         const header = document.getElementById(zone.dataset.advHeader);
                         if (header) {
@@ -1350,7 +1144,6 @@
                         }
                     }
 
-                    // Jeśli to strefa GRA
                     if (zone.dataset.graCounter) {
                         const counterSpan = document.getElementById(zone.dataset.graCounter);
                         if (counterSpan) {
@@ -1540,8 +1333,8 @@
             currentMode = 'rozpiska';
             tabRozpiska.style.background = '#cc0000';
             tabRozpiska.style.color = 'white';
-            tabPodzial.style.background = '#cc0000';
-            tabPodzial.style.color = 'white';
+            tabPodzial.style.background = '#e0e0e0';
+            tabPodzial.style.color = '#333';
             advSection.style.display = 'none';
         };
 
