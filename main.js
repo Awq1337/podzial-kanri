@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Podział aut + Interaktywny HTML v19.7
+// @name         Kanri - Podział aut + Inteligentne Ukrywanie GRA v19.8
 // @namespace    http://tampermonkey.net/
-// @version      19.7
-// @description  Naprawa ReferenceError (renderAssignmentResults), interaktywna Rozpiska z przekreślaniem, Drag & Drop w Podziale, profil Opony ze stanowisk technicznych, ciasny Cap (10%+10pt).
+// @version      19.8
+// @description  Ukrywanie sekcji GRA dla zmian na których nie pracują doradcy, interaktywna Rozpiska z przekreślaniem, Drag & Drop w Podziale, profil Opony ze stanowisk technicznych, Cap 10%+10pt.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -1050,8 +1050,8 @@
         html += `<h2>Podział Aut Doradców - ${today}${isSaturdayMode ? ' (SOBOTA)' : ''}</h2>`;
 
         if (!isSaturdayMode) {
-            html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
             if (morningAdvisors.length > 0) {
+                html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
                 html += `<table><thead><tr>`;
                 morningAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
@@ -1077,19 +1077,22 @@
                     html += `</tr>`;
                 }
                 html += `</tbody></table>`;
+
+                if (gra1.length > 0) {
+                    html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
+                        <div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
+                    gra1.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
+                    html += `</div></div>`;
+                }
             }
 
-            if (gra1.length > 0) {
-                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                    <div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [${gra1.length} aut]:</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
-                gra1.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
+            if (morningAdvisors.length > 0 && afternoonAdvisors.length > 0) {
+                html += `<div class="page-break"></div>`;
             }
 
-            html += `<div class="page-break"></div>`;
-            html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
             if (afternoonAdvisors.length > 0) {
+                html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
                 html += `<table><thead><tr>`;
                 afternoonAdvisors.forEach(adv => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
@@ -1115,14 +1118,14 @@
                     html += `</tr>`;
                 }
                 html += `</tbody></table>`;
-            }
 
-            if (gra3.length > 0) {
-                html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
-                    <div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div>
-                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
-                gra3.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
-                html += `</div></div>`;
+                if (gra3.length > 0) {
+                    html += `<div style="margin-bottom:15px; border:1px solid #000; padding:4px; background:#fff3cd;">
+                        <div class="gra-header">GRA - Zmiana 3 (13:00+) [${gra3.length} aut]:</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">`;
+                    gra3.forEach(c => { html += `<div style="border:1px dashed #666; padding:3px; background:#fff;">${c.rawPrint}</div>`; });
+                    html += `</div></div>`;
+                }
             }
         } else {
             html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
@@ -1170,11 +1173,15 @@
         printWin.document.close();
     }
 
+    // DYNAMICZNE UKRYWANIE SEKCJI GRA W INTERAKTYWNYM HTML
     function downloadAssignmentHTML(assignment, gra1, gra3, advisorsConfig) {
         let d = new Date();
         d.setDate(d.getDate() + selectedDayOffset);
         let today = d.toLocaleDateString('pl-PL');
         let filename = `Podzial_Aut_${today.replace(/\./g, '-')}.html`;
+
+        let morningAdvisors = advisorsConfig.filter(a => a.shift === 1 || a.shift === 2 || a.shift === 4);
+        let afternoonAdvisors = advisorsConfig.filter(a => a.shift === 3 || a.shift === 2);
 
         let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Podział Aut - ${today}</title><style>
             body { font-family: Arial, sans-serif; margin: 15px; font-size: 11px; background-color: #f4f6f7; user-select: none; }
@@ -1203,12 +1210,9 @@
         let cardIdCounter = 1;
 
         if (!isSaturdayMode) {
-            let morningAdvisors = advisorsConfig.filter(a => a.shift === 1 || a.shift === 2 || a.shift === 4);
-            let afternoonAdvisors = advisorsConfig.filter(a => a.shift === 3 || a.shift === 2);
-
-            // ZMIANA I
-            html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
+            // ZMIANA I (Generujemy sekcję i GRA1 tylko gdy są doradcy na zmianę I)
             if (morningAdvisors.length > 0) {
+                html += `<h3>ZMIANA I (6:00 - 13:00)</h3>`;
                 html += `<table><thead><tr>`;
                 morningAdvisors.forEach((adv, idx) => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour < 13);
@@ -1228,20 +1232,20 @@
                     html += `</td>`;
                 });
                 html += `</tr></tbody></table>`;
+
+                if (gra1.length > 0) {
+                    html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [<span id="gra1-count">${gra1.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra1-zone" data-gra-counter="gra1-count">`;
+                    gra1.forEach(car => {
+                        let cId = `card-${cardIdCounter++}`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
+                    });
+                    html += `</div></div>`;
+                }
             }
 
-            if (gra1.length > 0) {
-                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 1 (&lt; 13:00) [<span id="gra1-count">${gra1.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra1-zone" data-gra-counter="gra1-count">`;
-                gra1.forEach(car => {
-                    let cId = `card-${cardIdCounter++}`;
-                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
-                });
-                html += `</div></div>`;
-            }
-
-            // ZMIANA III
-            html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
+            // ZMIANA III (Generujemy sekcję i GRA3 tylko gdy są doradcy na zmianę III)
             if (afternoonAdvisors.length > 0) {
+                html += `<h3>ZMIANA III (13:00 - 21:00)</h3>`;
                 html += `<table><thead><tr>`;
                 afternoonAdvisors.forEach((adv, idx) => {
                     let cars = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
@@ -1261,15 +1265,15 @@
                     html += `</td>`;
                 });
                 html += `</tr></tbody></table>`;
-            }
 
-            if (gra3.length > 0) {
-                html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [<span id="gra3-count">${gra3.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra3-zone" data-gra-counter="gra3-count">`;
-                gra3.forEach(car => {
-                    let cId = `card-${cardIdCounter++}`;
-                    html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
-                });
-                html += `</div></div>`;
+                if (gra3.length > 0) {
+                    html += `<div class="gra-box"><div class="gra-header">GRA - Zmiana 3 (13:00+) [<span id="gra3-count">${gra3.length}</span> aut]:</div><div class="gra-container drop-zone" id="gra3-zone" data-gra-counter="gra3-count">`;
+                    gra3.forEach(car => {
+                        let cId = `card-${cardIdCounter++}`;
+                        html += `<div class="car-card" id="${cId}" draggable="true" ondragstart="drag(event)" onclick="toggleComplete(this, event)">${car.rawPrint}</div>`;
+                    });
+                    html += `</div></div>`;
+                }
             }
         } else {
             html += `<h3>SOBOTA - PEŁNY DZIEŃ</h3>`;
