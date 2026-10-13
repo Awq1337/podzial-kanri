@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Kanri - Inteligentny podział aut + Interaktywny HTML v19.4
+// @name         Kanri - Inteligentny podział aut + Równomierne Opony v19.5
 // @namespace    http://tampermonkey.net/
-// @version      19.4
-// @description  Interaktywny eksport HTML z Drag & Drop (przeciąganie aut z GRA do doradców z automatycznym przeliczaniem liczników), łapanie zlelepionych słów BLOKADA/WOLNE, profil Opony, Cap 10%+10pt.
+// @version      19.5
+// @description  Bezwzględnie równomierny podział płatnych wymian kół/opon [O] między doradców, Drag & Drop w HTML, profil Opony ze stanowisk technicznych, Cap 10%+10pt, GR Yaris/Supra, EV 25%.
 // @author       Mikołaj
 // @match        https://kanri.aasys.pl/*
 // @updateURL    https://raw.githubusercontent.com/Awq1337/podzial-kanri/main/main.js
@@ -352,6 +352,11 @@
     function getAdvisorFleetCount(advisorName, assignmentMap) {
         const list = assignmentMap[advisorName] || [];
         return list.filter(car => car.isFleet).length;
+    }
+
+    function getAdvisorPureTiresCount(advisorName, assignmentMap) {
+        const list = assignmentMap[advisorName] || [];
+        return list.filter(car => car.tag === 'O').length;
     }
 
     function getAdvisorPrivateCalories(advisorName, assignmentMap) {
@@ -732,6 +737,13 @@
                                 if (aFleetCount !== bFleetCount) return aFleetCount - bFleetCount;
                             }
 
+                            // RÓWNOMIERNY PODZIAŁ CZYSTYCH OPON [O] MIĘDZY DORADCÓW
+                            if (car.tag === 'O') {
+                                let aTires = getAdvisorPureTiresCount(a.name, assignment);
+                                let bTires = getAdvisorPureTiresCount(b.name, assignment);
+                                if (aTires !== bTires) return aTires - bTires;
+                            }
+
                             if (cat === 'WERYFIKACJA' || cat === 'OTHER') {
                                 if (a.counts[cat] !== b.counts[cat]) return a.counts[cat] - b.counts[cat];
                                 if (a.counts.total !== b.counts.total) return a.counts.total - b.counts.total;
@@ -1086,7 +1098,7 @@
 
                 let maxAfternoonRows = 0;
                 afternoonAdvisors.forEach(adv => {
-                    let len = (assignment[adv.name] || []).filter(c => c.startHour >= 13);
+                    let len = (assignment[adv.name] || []).filter(c => c.startHour >= 13).length;
                     if (len > maxAfternoonRows) maxAfternoonRows = len;
                 });
 
@@ -1528,8 +1540,8 @@
             currentMode = 'rozpiska';
             tabRozpiska.style.background = '#cc0000';
             tabRozpiska.style.color = 'white';
-            tabPodzial.style.background = '#e0e0e0';
-            tabPodzial.style.color = '#333';
+            tabPodzial.style.background = '#cc0000';
+            tabPodzial.style.color = 'white';
             advSection.style.display = 'none';
         };
 
