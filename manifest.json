@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Kanri - Auto Podział Aut",
+  "version": "19.8",
+  "description": "Automatyczny podział aut i generowanie rozpiski dla doradców w Kanri.",
+  "content_scripts": [
+    {
+      "matches": ["https://kanri.aasys.pl/*"],
+      "js": ["main.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
